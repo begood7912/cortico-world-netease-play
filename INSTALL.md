@@ -42,7 +42,20 @@ python -m pip install --upgrade edge-tts
 
 ## 2. 安装步骤（按顺序）
 
-### 2.1 把包放到一个固定目录
+### 2.0 已发布版本：直接从 npm 装（推荐）
+
+包已发布到 npm，公开名 `cortico-world-netease-play`。Coopanion 扩展页源设为 `https://registry.npmjs.org`，
+搜索框填**完整包名**安装即可（搜索索引对新包有延迟，千万别只输入中文名）。命令行等价：
+
+```powershell
+cd "D:\Programs\Coopanion\data\extensions"      # 换成你的 Coopanion 数据目录
+pnpm add cortico-world-netease-play
+```
+
+其余步骤（启用、重启、最小配置）见 §2.4～§2.7。
+下面 2.1～2.3 是**开发/离线**才用的本地目录装法（用 `link:` 挂源码），普通用户可跳过。
+
+### 2.1 把包放到一个固定目录（仅开发/离线）
 
 例如 `D:\Worlds\coopanion-world-netease-play`。
 **不要**放进 `data\extensions\node_modules` 里手改 —— 那个目录由 pnpm 管。
@@ -198,7 +211,7 @@ node _check_env.mjs
 
 ---
 
-## 8. 发布前（现在没做，先记着）
+## 8. 发布元数据（已补齐）
 
-`package.json` 还缺三样发布元数据：`os`（应为 `["win32"]`）、`cortico.tags`、根目录 `CHANGELOG.md`。
-等决定发布时再补，不影响本机安装。
+`os: ["win32"]`、`cortico.tags`（`apps` `companion` `memory` `voice` `sensitive-data` `unofficial-api`）、
+作者 `ailing` 均已写进 `package.json`；发布/安装说明见 `PUBLISH.md`。

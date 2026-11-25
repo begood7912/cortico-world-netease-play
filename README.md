@@ -5,8 +5,26 @@ Coopanion 的一个 World 插件（`kind: world`，`api: 6`）：让大肥鱼帮
 
 **只支持网易云音乐**（需要本机装有网易云音乐客户端），**仅限 Windows 系统**。
 
-当前版本见 `package.json`（0.1.13）。开发记录与历史改动日志不随包发布（备份在 F 盘 `coopanion-world-netease-play.bak-*/开发记录-后续\`）。
-**要装给别人用 → 看 `INSTALL.md`**（装什么、按什么顺序装、装完怎么自检，AI 可直接照着执行）。
+当前版本见 `package.json`（0.1.15）。开发记录与历史改动日志不随包发布。
+
+## 安装（一句话版）
+
+**最省事：让大肥鱼帮你装。** 在 Coopanion 里对 AI 说：
+
+```
+帮我装「网易云陪听」这个 World 扩展，npm 包名 cortico-world-netease-play，
+先读它的 INSTALL.md，照着装好并跑一遍自检；需要我点界面的地方告诉我点哪里。
+```
+
+它会在 `data\extensions` 里装包、打开 `worlds["netease-play"].enabled`、跑 `node _check_env.mjs` 核对环境，缺什么补什么。
+
+手动装三步：
+
+1. Coopanion 设置 → **World 扩展** → 搜索填完整包名 `cortico-world-netease-play` → 安装（源用 `https://registry.npmjs.org`）
+2. 点「重启进程」→「我的 World」里「网易云陪听」点电源**激活**
+3. 面板设置页填歌单名/ID，确认 `cdpPort=9229`
+
+详细步骤、可选组件、逐条排错见 **`PUBLISH.md`（发布/安装说明）** 与 **`INSTALL.md`（给 AI 照做的完整装法）**。
 
 ## 它做什么
 
@@ -77,12 +95,12 @@ webui/            客户端面板（panel.js + panel.css）
 | Ollama（11434）可选 | 三张卡的模型；云端 OpenAI 兼容接口二选一 |
 | 和风天气 Key | 「按天气」来源 |
 
-## 安装
+## 安装（详细）
 
-给新机器/别人装：照 `INSTALL.md` 走（含逐条命令、可选组件、自检脚本 `node _check_env.mjs`）。
-这里只留最短版本：`data\extensions\` 里 `pnpm add <包目录绝对路径>`（或设置页「手动安装」填路径）→
+公开版本直接从 npm 装：`cortico-world-netease-play`（步骤如下，含一句话让 AI 代装的说法，见 `PUBLISH.md`）。
+开发/离线场景才用本地目录：`data\extensions\` 里 `pnpm add <包目录绝对路径>`（或设置页「手动安装」填路径）→
 `config.json` 的 `worlds.netease-play.enabled = true` → 重启 Coopanion。
-`world-owners.json` 由宿主加载成功后自己维护，一般不用手写。
+`world-owners.json` 由宿主加载成功后自己维护，一般不用手写。需要改本机路径常量时看 `INSTALL.md` §5。
 
 ## 自测
 
