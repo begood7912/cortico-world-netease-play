@@ -317,7 +317,14 @@ async function playlistId(cookie, name) {
 }
 
 try {
-  const head0 = await pageHead();
+  // 0.1.17（B3）：客户端刚启动时页面还没渲染完，pageHead() 拿到空串 →
+  // 后面直接判 no-playlist-in-sidebar（11-25 17:51 现场：head 为空）。
+  // 先等标题出来，最多等 4 秒；等不到再按老逻辑往下走。
+  let head0 = await pageHead();
+  for (let i = 0; i < 20 && !head0; i += 1) {
+    await sleep(200);
+    head0 = await pageHead();
+  }
 
   // ① 当前列表第一行就是这首歌 → 直接双击
   const r0 = await firstRowUsable();
@@ -347,12 +354,19 @@ try {
   // ② 不在目标歌单页就先切过去（点侧栏，不抢窗口）
   let how = "";
   if (wantPlaylist && head0 !== wantPlaylist) {
-    const item = await ev(`(()=>{
+    // 0.1.17（B3）：侧栏是懒渲染的 —— 刚切入/刚启动时这一项可能还没画出来，
+    // 老逻辑一取不到就报 no-playlist-in-sidebar。改成最多重试 8 次（约 1.6 秒）。
+    let item = "";
+    for (let i = 0; i < 8; i += 1) {
+      item = await ev(`(()=>{
       const all=[...document.querySelectorAll('[class*=PlayListItemContent]')];
       for(const e of all){ if((e.textContent||'').trim()!==${JSON.stringify(wantPlaylist)}) continue;
         const r=e.getBoundingClientRect(); if(r.width<8) continue;
         return JSON.stringify({x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}); }
       return ''})()`);
+      if (item) break;
+      await sleep(200);
+    }
     if (!item) done({ ok: false, reason: "no-playlist-in-sidebar", head: head0 });
     const p = JSON.parse(item);
     await click(p.x, p.y, 1);

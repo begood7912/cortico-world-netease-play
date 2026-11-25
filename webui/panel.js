@@ -1316,8 +1316,24 @@ export default {
             }
           }
 
-          /** 0.17.43（D2）：手动抓一次远端，成功/失败写回文字；抓完从缓存重画这一块。 */
-          async function refreshWeather() {
+          /** 0.1.17（B5，用户口径 11-25）：点这个按钮**不再立刻打接口**。
+           *
+           * 只记「最后一次点击的时间」：连点几次都只算最后一次，30 秒内没有新点击才真刷一次。
+           * 理由：立刻刷会跟点歌抢网络和 CPU（用户 11-25 现场怀疑过这点），
+           * 而面板这份天气本来就不需要秒级更新（自动刷新读的是后台 15 分钟快照）。
+           */
+          let refreshTimer = 0;
+          function refreshWeather() {
+            if (refreshTimer) clearTimeout(refreshTimer);
+            result.textContent = zh ? '已记下，30 秒后刷新（再点会重新计时）…' : 'Queued — refreshing in 30s';
+            refreshTimer = setTimeout(() => {
+              refreshTimer = 0;
+              void doRefreshWeather();
+            }, 30000);
+          }
+
+          /* 0.17.43（D2）：手动抓一次远端，成功/失败写回文字；抓完从缓存重画这一块。 */
+          async function doRefreshWeather() {
             if (querying) return;
             querying = true;
             result.textContent = zh ? '正在刷新远端天气…' : 'Fetching…';

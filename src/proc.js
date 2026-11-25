@@ -118,7 +118,10 @@ export const PROFILES = {
   },
   'netease.fastplay': {
     kind: 'node', script: 'fastplay.js', cwd: 'py', env: 'sandboxed',
-    marker: 'last', timeout: 2500, onTimeout: 'partial',
+    // 0.1.17（B3）：2.5 秒 → 4.5 秒。2.5 秒是「页面已经停在目标歌单」时的实测值；
+    // 客户端刚启动 / 正在切歌单时，CDP 每步都慢几百毫秒，累计可达 15 秒（11-25 实测）。
+    // 2.5 秒只会把本来能成的点歌杀在半路，然后落到慢路径。
+    marker: 'last', timeout: 4500, onTimeout: 'partial',
     msg: { spawn: '起不来快路径', timeout: '', parse: '' },
   },
   'netease.playlists': {

@@ -58,8 +58,14 @@ EXE = r"C:\Program Files\NetEase\CloudMusic\cloudmusic.exe"
 NOWIN = 0x08000000  # CREATE_NO_WINDOW
 
 TOOLS = os.environ.get("NCM_TOOLS_DIR") or r"D:\Programs\Coopanion\data\home\companion\workspace\run\tools"
-if TOOLS not in sys.path:
-    sys.path.insert(0, TOOLS)
+# 0.1.17（B2）：包目录优先，run\tools 只做兜底。
+# 起因（11-25 实测）：TOOLS 插到 sys.path[0] 会把包里的 py\op3.py 顶掉，
+# 而 run\tools 那份是 11-21 的旧副本（没有 add_tracks_report）→ 慢路径删完歌就崩。
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+if TOOLS and TOOLS not in sys.path:
+    sys.path.append(TOOLS)
 
 try:
     import op3
@@ -541,6 +547,16 @@ def play_batch_queue(s, csrf, mine, ids, titles, artists, pid, pname):
     加失败不再 `return None` 让上层以为全成，也不再把 502 当「已经在里面」。
     """
     del_note = "ok"
+    # 0.1.17（B4）：先确认「加歌」这条路真的可用，再动删除 ——
+    # 11-25 现场：旧副本 op3 没有 add_tracks_report，del 先成功、add 崩掉，
+    # 结果歌被从歌单删掉且没加回来、也不播（用户侧看到的就是「怎么点都不响」）。
+    if not hasattr(op3, "add_tracks_report"):
+        print("✘ 运行期 op3.py 缺 add_tracks_report（旧副本：%s），不删歌、不继续"
+              % getattr(op3, "__file__", "?"))
+        return {
+            "addedIds": [], "failedIds": [int(x) for x in ids], "del": "skipped",
+            "played": None, "playError": "op3-stale", "errors": ["op3-stale"],
+        }
     _throttle()
     try:
         op3.del_tracks(s, csrf, pid, ids)   # 接口对不存在的 id 也返回 200
@@ -569,6 +585,15 @@ def play_batch_queue(s, csrf, mine, ids, titles, artists, pid, pname):
     added_set = set(int(x) for x in rep["addedIds"])
     if not added_set:
         print("✘ 这批一首都没加进「%s」，不播了。" % pname)
+        # 0.1.17（B4）：一条都没加进去 = 前面那次 del 白删了，把歌补回去，
+        # 至少别让用户的歌单静悄悄少歌。
+        try:
+            if hasattr(op3, "add_tracks"):
+                _throttle()
+                op3.add_tracks(s, csrf, pid, list(reversed(ids)))
+                print("↩ 已用 add_tracks 把删掉的 %d 首加回去" % len(ids))
+        except Exception as e:
+            print("↩ 回滚加歌也失败（歌单少了这几首）：%s" % e)
         return {
             "addedIds": [], "failedIds": [int(x) for x in ids],
             "del": del_note, "played": None,
