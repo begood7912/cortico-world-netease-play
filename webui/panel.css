@@ -1,0 +1,759 @@
+/*
+ * AI点歌面板的少量样式。其余视觉全部走宿主组件库（ctx.ui），
+ * 这里只补三件宿主没提供的东西：歌名标题的「可点」感觉、hover 反馈、播放中状态。
+ *
+ * 类名统一 np- 前缀，免得跟宿主或其他扩展撞。
+ */
+
+/* 卡片标题当播放按钮用：整块标题热区，比下面再塞一颗小按钮好点得多 */
+.np-clickable {
+  cursor: pointer;
+}
+.np-clickable:hover {
+  opacity: 0.75;
+}
+.np-clickable:active {
+  opacity: 0.55;
+}
+
+/* 正在起播：网易云要搜歌、插歌单、再点开，通常 3~10 秒，期间别再让点第二次 */
+.np-busy {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* 标题旁的「▷ 播放」小字：不给提示没人知道标题能点 */
+.np-play-hint {
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 400;
+  opacity: 0.55;
+  white-space: nowrap;
+}
+
+/* ---------------- 「此刻」页：照抄「一起听歌 · 她此刻」的版式 ----------------
+ * 那边是手写 DOM + 自己的 CSS（title 19px、三块 flex 卡、顶上一根 3px 进度条）。
+ * 这里类名换成 np- 前缀，其余数值与变量一字不改 —— 深浅主题全靠宿主的变量带。
+ */
+
+.np-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px;
+  font-size: 13px;
+  color: var(--ink, #1b1e24);
+  line-height: 1.65;
+}
+
+.np-head { display: flex; flex-direction: column; gap: 3px; }
+.np-eyebrow {
+  margin: 0;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim, #9ca3af);
+}
+/* 歌名和歌手同一行：歌名有色、歌手灰，一眼分得清谁是谁 */
+.np-line { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; min-width: 0; }
+.np-title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 650;
+  line-height: 1.35;
+  word-break: break-word;
+  color: var(--accent, #c2601f);
+}
+.np-sub {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-dim, #9ca3af);
+  word-break: break-word;
+}
+
+.np-cols { display: flex; flex-wrap: wrap; gap: 10px; }
+.np-card {
+  flex: 1 1 210px;
+  min-width: 190px;
+  padding: 11px 13px;
+  border: 1px solid var(--line, #e5e7eb);
+  border-radius: 10px;
+  background: var(--sheet, #ffffff);
+}
+.np-card h3 {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-soft, #6b7280);
+  letter-spacing: 0.02em;
+}
+
+/* 卡① 跨整行：宽度等于下面三张卡之和，不参与 np-cols 的挤压。
+   现在是排在最上面，所以是「下边留白」而不是上边。 */
+.np-card-wide {
+  flex: 1 1 100%;
+  margin-bottom: 2px;
+}
+
+/* ---- 卡④ 推荐列表 ---- */
+.np-rc-hint { margin: 0 0 8px; }
+/* 0.16.90：推荐卡第二条小字（歌单刷新时间 + 总量），比第一条再淡一点 */
+.np-rc-stamp { margin: -2px 0 8px; font-size: 12px; opacity: 0.86; }
+.np-rc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.np-rc-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.np-rc-name {
+  color: var(--accent, #c2601f);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.np-rc-artist {
+  color: var(--ink-dim, #9ca3af);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 0.16.86：专辑名。跟歌手同一色系再淡一档，排在歌手后面，长了就省略。 */
+.np-rc-album {
+  color: var(--ink-dim, #9ca3af);
+  font-size: 11px;
+  opacity: 0.85;
+  max-width: 34%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.np-rc-basis {
+  margin-left: auto;
+  color: var(--ink-dim, #9ca3af);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* 第 111 节：歌名后面那两段 —— 这首多长、网易云哪张歌单推来的。
+   时长靠数字等宽对齐，来源做成小标签，跟「像《X》」区分开。 */
+.np-rc-dur,
+.np-rc-from {
+  color: var(--ink-dim, #9ca3af);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.np-rc-dur {
+  margin-left: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.np-rc-from {
+  margin-left: 6px;
+  padding: 0 4px;
+  border: 1px solid rgba(156, 163, 175, 0.35);
+  border-radius: 4px;
+  line-height: 1.5;
+}
+
+/* ---- 推荐卡上「点一下就播」的两处热区 ---- */
+/* 歌名和「像《X》」都能点。悬停时淡淡下划线 + 变橙，不点也能看出这里能动手。 */
+.np-playable {
+  cursor: pointer;
+  text-decoration: underline dotted transparent;
+  text-underline-offset: 3px;
+  transition: color 0.12s, text-decoration-color 0.12s;
+}
+.np-playable:hover {
+  color: var(--accent, #c2601f);
+  text-decoration-color: rgba(194, 96, 31, 0.55);
+}
+.np-playable:active {
+  opacity: 0.6;
+}
+/* 正在起播：别再让它点第二次 */
+.np-busy {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.np-muted {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-dim, #9ca3af);
+  line-height: 1.8;
+}
+
+.np-verdict {
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--ink-soft, #6b7280);
+  margin-bottom: 4px;
+}
+/* 三档判断各一个颜色：喜欢偏暖、一般灰、不喜欢偏冷 */
+.np-v-like { color: #d3794a; }
+.np-v-meh { color: var(--ink-dim, #9ca3af); font-weight: 500; }
+.np-v-dislike { color: #6b7f9e; }
+/* 理由：比判断小一号，弱一点，跟歌词那句区分开 */
+/* 卡②：先引一句歌词，竖线当引用标记，再从这句往下说 */
+.np-like-line {
+  margin: 0 0 8px;
+  padding: 1px 0 1px 9px;
+  border-left: 2px solid rgba(194, 96, 31, 0.32);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-soft, #6b7280);
+  word-break: break-word;
+}
+.np-like-lyric { font-style: italic; }
+.np-like-quote { color: rgba(194, 96, 31, 0.55); }
+
+.np-like-why {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-soft, #6b7280);
+}
+
+/* 卡①的正文：比她别的字稍大一点，是她说话的口吻 */
+.np-hear {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--ink, #1b1e24);
+}
+.np-hearing { opacity: 0.7; font-style: italic; }
+/* 0.16.53：卡② 顶上那行「歌手《歌名》· 100 多万人喜欢」—— 比正文轻，跟标题贴着 */
+.np-hear-meta {
+  margin: -2px 0 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-dim, #6b7280);
+}
+
+.np-wants {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12.5px;
+  line-height: 1.95;
+}
+.np-wants li { color: var(--ink, #1b1e24); }
+.np-artist {
+  margin-left: 6px;
+  font-size: 11.5px;
+  color: var(--ink-dim, #9ca3af);
+}
+
+.np-btn {
+  margin-top: 10px;
+  display: inline-block;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--ink, #1b1e24);
+  background: var(--sheet-2, #f7f8fa);
+  border: 1px solid var(--line, #e5e7eb);
+  border-radius: 7px;
+  cursor: pointer;
+  line-height: 1.6;
+}
+.np-btn:hover { border-color: var(--ink-dim, #9ca3af); }
+.np-btn:disabled { opacity: 0.5; cursor: default; }
+
+.np-foot {
+  font-size: 11px;
+  color: var(--ink-dim, #9ca3af);
+  text-align: right;
+}
+
+/* 想听那张卡的输入行：按钮在行内，不继承 np-btn 的上间距 */
+.np-add {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  align-items: center;
+}
+.np-add .np-btn { margin-top: 0; flex: none; }
+.np-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--ink, #1b1e24);
+  background: var(--sheet, #fff);
+  border: 1px solid var(--line, #e5e7eb);
+  border-radius: 7px;
+  line-height: 1.6;
+}
+.np-input:focus { outline: none; border-color: var(--ink-dim, #9ca3af); }
+.np-input::placeholder { color: var(--ink-dim, #9ca3af); }
+/* 0.1.02（用户口径）：地址 / 路径框压成单行高，别再跟着正文字号显得像两行。 */
+.np-addr {
+  height: 26px;
+  box-sizing: border-box;
+  padding: 2px 8px;
+  line-height: 1.4;
+  font-size: 12px;
+}
+
+/* ---- 卡③ 别人怎么说 ---- */
+.np-cm-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  min-width: 0;
+}
+.np-cm-likes {
+  color: var(--accent, #c2601f);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.np-cm-nick {
+  color: var(--ink-dim, #9ca3af);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.np-cm-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.85;
+  color: var(--ink, #1b1e24);
+  white-space: pre-line;
+  word-break: break-word;
+}
+.np-cm-total { margin-top: 10px; }
+
+/* ---- 她看完评论后的那几句：左侧一根橙线，跟评论原文分开 ---- */
+.np-cm-say {
+  margin-top: 12px;
+  padding-left: 10px;
+  border-left: 2px solid var(--accent, #c2601f);
+}
+.np-cm-say-label {
+  margin: 0 0 3px;
+  font-size: 11px;
+  letter-spacing: .06em;
+  color: var(--ink-dim, #9ca3af);
+}
+.np-cm-say-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.85;
+  color: var(--ink, #3f3a35);
+  word-break: break-word;
+}
+
+/* ---- 云端/模型报错的原话（401、余额为空之类） ---- */
+.np-err {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #b3462f;
+  word-break: break-all;
+  opacity: 0.85;
+}
+
+/* ---- 「模型」页签（0.0.1.6.5）---- */
+/* 用 hidden 属性控制显隐：宿主的全局样式不保证有 [hidden]，这里自己兜一层。 */
+.np-model [hidden] { display: none !important; }
+
+.np-model { display: flex; flex-direction: column; gap: 10px; }
+.np-model-src { padding: 2px 0 0; }
+.np-model-foot { margin: 2px 0 0; font-size: 12px; }
+
+.np-cloud, .np-local { flex: none; }
+.np-cloud h3, .np-local h3 {
+  margin: 0 0 9px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink, #111);
+}
+
+/* Key 一行：输入框 + 显示/隐藏 */
+.np-key-row { display: flex; align-items: center; gap: 8px; width: 100%; }
+.np-key-row input { flex: 1 1 auto; min-width: 0; }
+
+/* 读取模型 / 保存 */
+.np-model-acts { display: flex; gap: 8px; margin: 2px 0 10px; }
+
+/* 读到的模型名，点一下填进模型输入框 */
+.np-chips { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; min-height: 0; }
+.np-chips-label { font-size: 11px; color: var(--ink-dim, #9ca3af); }
+.np-chips > .np-playable { font-size: 11px; }
+
+.np-model-status { margin: 6px 0 0; font-size: 12px; color: var(--ink-soft, #6b7280); }
+.np-model-status.bad { color: #b91c1c; }
+
+/* ---- 安静时她主动开口的那句（今天听点什么的互动段） ---- */
+.np-idle {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px;
+  margin: 10px 0 2px; padding: 8px 10px;
+  border-left: 3px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.06);
+  border-radius: 0 6px 6px 0;
+  font-size: 12px; line-height: 1.6;
+}
+.np-idle-label { color: #b45309; font-size: 11px; letter-spacing: 0.02em; }
+.np-idle-say { flex: 1 1 auto; min-width: 0; color: var(--ink, #111827); }
+.np-idle-go { flex: 0 0 auto; font-size: 11px; }
+.np-idle-quiet { margin: 8px 0 0; font-size: 11px; }
+
+/* 她问「要我帮你放吗」→ 是 / 否（30 秒自动否） */
+.np-ask {
+  flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-top: 6px;
+}
+.np-ask-yes, .np-ask-no {
+  font: inherit; font-size: 11px; line-height: 1.4;
+  padding: 3px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgba(245, 158, 11, 0.55);
+  background: #fff; color: #b45309;
+}
+.np-ask-yes { background: #f59e0b; border-color: #f59e0b; color: #fff; font-weight: 600; }
+.np-ask-yes:hover { background: #d97706; }
+.np-ask-no:hover { background: rgba(245, 158, 11, 0.12); }
+.np-ask-left { font-size: 11px; color: var(--ink-dim, #9ca3af); }
+
+
+/* 推荐卡标题行：标题 +「换一批」 */
+.np-rc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.np-rc-again {
+  flex: 0 0 auto; font: inherit; font-size: 11px;
+  padding: 3px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgba(107, 114, 128, 0.35); background: #fff;
+  color: var(--ink-soft, #6b7280);
+}
+.np-rc-again:hover { border-color: rgba(107, 114, 128, 0.7); color: var(--ink, #111827); }
+.np-rc-again:disabled { opacity: 0.55; cursor: default; }
+/* 0.17.43（B6）：命令发出去、还没回来 → 按钮变黑，一眼看出"在办、别催" */
+.np-rc-again.np-rc-busy {
+  background: #111; border-color: #111; color: #fff; opacity: 1;
+}
+
+/* ---- 接力点歌：她递过来的下一首（播放中也会出现） ---- */
+.np-chain {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px;
+  margin: 8px 0 2px; padding: 8px 10px;
+  border-left: 3px solid #2563eb;
+  background: rgba(37, 99, 235, 0.06);
+  border-radius: 0 6px 6px 0;
+  font-size: 12px; line-height: 1.6;
+}
+.np-chain-label { color: #1d4ed8; font-size: 11px; letter-spacing: 0.02em; }
+.np-chain-say { flex: 1 1 auto; min-width: 0; color: var(--ink, #111827); }
+.np-chain-count { flex: 0 0 auto; font-size: 11px; color: var(--ink-dim, #9ca3af); }
+.np-chain-go { flex: 0 0 auto; font-size: 11px; }
+.np-chain-wait { flex: 0 0 auto; font-size: 11px; color: var(--ink-dim, #9ca3af); }
+
+/* 0.0.1.6.36：一直保持安静 —— 一行说明 + 一个「让她继续开口」 */
+.np-quiet-now {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;
+  margin: 8px 0 2px; padding: 7px 10px;
+  border-left: 3px solid #9ca3af;
+  background: rgba(156, 163, 175, 0.10);
+  border-radius: 0 6px 6px 0;
+  font-size: 12px; line-height: 1.55;
+}
+.np-quiet-text { flex: 1 1 auto; min-width: 0; color: var(--ink-dim, #6b7280); }
+.np-quiet-off {
+  flex: 0 0 auto; font-size: 11px; padding: 2px 8px; cursor: pointer;
+  border: 1px solid rgba(107, 114, 128, 0.35); border-radius: 999px;
+  background: transparent; color: var(--ink, #111827);
+}
+.np-quiet-off:hover { background: rgba(107, 114, 128, 0.12); }
+.np-quiet-off:disabled { opacity: 0.5; cursor: default; }
+/* ---- 设置页（0.16.50）：四张折叠卡，一行一项 ---- */
+.np-set { display: flex; flex-direction: column; gap: 10px; }
+.np-setrow + .np-setrow {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line, #e5e7eb);
+}
+.np-sethead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.np-setlabel {
+  font-size: 13.5px;
+  line-height: 1.55;
+  font-weight: 600;
+  color: var(--ink-soft, #6b7280);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.np-setnote { margin: 5px 0 0; font-size: 12px; line-height: 1.5; }
+/* 数字项窄一点，别撑满整行让人以为要填长文本 */
+.np-num { width: 96px; }
+.np-sel { min-width: 190px; max-width: 60%; }
+/* 子项被总闸关掉时置灰 */
+.np-setrow .switchbox > .check > input:disabled { opacity: .45; cursor: not-allowed; }
+/* ---- 分组小方框（0.16.57）：把「只管某一张卡」的几项圈在一起，一眼能认出范围 ---- */
+.np-subgroup {
+  margin: 12px 0;
+  padding: 9px 12px 3px;
+  border: 1px solid var(--line, #e5e7eb);
+  border-left: 3px solid #d97757;                 /* 跟勾选框同色系 */
+  border-radius: 10px;
+  background: rgba(217, 119, 87, 0.045);
+}
+.np-subgroup-tag {
+  margin: 0 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--ink, #1b1e24);
+}
+.np-subgroup .np-setrow + .np-setrow { border-top-color: rgba(0, 0, 0, 0.06); }
+/* ---- 提示词卡（0.16.52）：三组多行输入 + 保存 / 取消 / 还原默认 ---- */
+.np-promptbox + .np-promptbox {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line, #e5e7eb);
+}
+.np-prompttitle {
+  font-size: 13.5px;
+  line-height: 1.55;
+  font-weight: 600;
+  color: var(--ink-soft, #6b7280);
+}
+.np-promptfield { margin-top: 8px; }
+.np-promptsublabel { margin: 0 0 4px; font-size: 12px; }
+/* 多行输入：能拖高，但别让人手滑把整张卡拖没 */
+.np-prompt {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  max-height: 260px;
+  resize: vertical;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink, #111827);
+  background: var(--paper, #fff);
+  border: 1px solid var(--line, #e5e7eb);
+  border-radius: 8px;
+}
+.np-prompt:focus {
+  outline: none;
+  border-color: var(--accent, #f97316);
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.14);
+}
+.np-prompt::placeholder { color: var(--ink-dim, #9ca3af); }
+/* 0.17.15：整行宽的行（前置语句那种长文本）：标签在上，控件占满整行 */
+.np-setrow-wide .np-sethead { display: block; }
+.np-setrow-wide .np-setlabel { margin-bottom: 6px; }
+.np-setrow-wide .np-promptwrap { width: 100%; }
+/* 0.17.14：AI 设置里那个前置语句 + 三个按钮（保存 / 取消 / 设为默认） */
+.np-promptwrap { display: flex; flex-direction: column; gap: 8px; }
+.np-promptwrap .np-promptbar { margin-top: 0; padding-top: 0; border-top: none; justify-content: flex-start; }
+.np-promptbar {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line, #e5e7eb);
+}
+.np-btn {
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  padding: 8px 14px;
+  cursor: pointer;
+  border-radius: 8px;
+  border: 1px solid var(--line, #e5e7eb);
+  background: transparent;
+  color: var(--ink, #111827);
+}
+.np-btn:hover { background: rgba(107, 114, 128, 0.10); }
+.np-btn.primary {
+  border-color: var(--accent, #f97316);
+  background: var(--accent, #f97316);
+  color: #fff;
+}
+.np-btn.primary:hover { filter: brightness(1.06); }
+.np-btn.ghost { color: var(--ink-dim, #6b7280); }
+
+/* ---- 二选一（0.17.33）：接力按哪张卡挑下一首。点一个，另一个自动灭 ----
+   不用两个复选框（会出现两个都开），只存一个值，界面只是把那个值画成高亮。 */
+.np-choice { display: inline-flex; gap: 6px; flex: 0 0 auto; }
+.np-choice .np-choice-btn { margin-top: 0; padding: 6px 12px; border-radius: 999px; font-size: 12.5px; }
+.np-choice .np-choice-btn.on {
+  border-color: var(--accent, #f97316);
+  background: rgba(249, 115, 22, 0.12);
+  color: var(--accent, #f97316);
+  font-weight: 600;
+}
+
+/* ---- 多选下拉（0.16.60）：一个按钮 + 展开的七组可勾列表 ----------------
+   为什么不做成浮层：宿主卡片自己有 overflow，浮层会被裁掉一半；
+   展开区走在文档流里（挂在整行末尾），长一点也没关系，能滚。 */
+.np-multi { display: flex; justify-content: flex-end; flex: 0 0 auto; }
+.np-multi-btn {
+  margin-top: 0;
+  max-width: 340px;
+  padding: 7px 12px;
+  font-size: 12.5px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.np-multi.open .np-multi-btn {
+  border-color: #d97757;
+  color: #d97757;
+  background: rgba(217, 119, 87, 0.06);
+}
+.np-multi-panel {
+  margin-top: 10px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--line, #e5e7eb);
+  border-left: 3px solid #d97757;
+  border-radius: 10px;
+  background: rgba(217, 119, 87, 0.045);
+  max-height: 320px;
+  overflow: auto;
+}
+.np-multi-g {
+  margin: 10px 0 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink, #1b1e24);
+  padding-bottom: 3px;
+  border-bottom: 1px dashed rgba(0, 0, 0, 0.08);
+}
+.np-multi-g:first-child { margin-top: 0; }
+.np-multi-item { padding: 1px 0; }
+
+/* ---- 扩展信息卡（0.17.22）：照宿主扩展页那张卡抄的版式 ----------------
+   只读展示：标题 + 包名@版本、简介、信息表。没有外链就不画那一行。 */
+.np-about-top { display: flex; align-items: center; gap: 12px; margin: 2px 0 14px; }
+.np-about-icon {
+  width: 46px; height: 46px; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.06);
+  color: #8a8f98; font-size: 20px; font-weight: 600;
+}
+.np-about-head { min-width: 0; }
+.np-about-name { font-size: 17px; font-weight: 600; color: var(--ink, #1b1e24); line-height: 1.3; }
+.np-about-pkg { margin-top: 3px; font-size: 12px; color: #8a8f98; word-break: break-all; }
+.np-about-links { display: flex; flex-wrap: wrap; gap: 18px; margin: 0 0 14px; font-size: 12.5px; }
+.np-about-link { color: #d97757; text-decoration: none; }
+.np-about-link:hover { text-decoration: underline; }
+.np-about-h {
+  margin: 14px 0 6px; padding-bottom: 5px;
+  font-size: 12.5px; font-weight: 600; color: #6b7280;
+  border-bottom: 1px solid var(--line, #e5e7eb);
+}
+.np-about-p { margin: 0 0 2px; font-size: 13px; line-height: 1.65; color: var(--ink, #1b1e24); }
+.np-about-row { display: flex; gap: 16px; padding: 7px 0; border-bottom: 1px solid rgba(0, 0, 0, 0.05); font-size: 12.5px; }
+.np-about-row:last-child { border-bottom: 0; }
+.np-about-k { flex: 0 0 96px; color: #8a8f98; }
+.np-about-v { color: var(--ink, #1b1e24); word-break: break-all; }
+
+/* ---- QWeather 配置卡（0.17.23 原型）：照宿主「实时天气」配置页抄的版式 ---- */
+.np-qw-h { margin: 0 0 10px; font-size: 14px; font-weight: 600; }
+.np-qw-label { margin: 12px 0 4px; font-size: 12px; color: #8a8f98; }
+.np-qw-badge {
+  display: inline-block; margin: 8px 0 2px; padding: 2px 10px;
+  border-radius: 999px; font-size: 11.5px; color: #2f8f5b;
+  background: rgba(47, 143, 91, 0.10); border: 1px solid rgba(47, 143, 91, 0.35);
+}
+.np-qw-keyrow { display: flex; align-items: center; gap: 10px; }
+.np-qw-keyrow > :first-child { flex: 0 1 200px; }
+.np-qw-test {
+  margin: 14px 0 6px; padding: 0; border: 0; background: none;
+  color: #8a8f98; font-size: 12.5px; cursor: pointer; text-align: left;
+}
+.np-qw-test:hover { color: #d97757; }
+.np-qw-note { margin: 2px 0 0; font-size: 12px; }
+.np-qw-help {
+  margin-top: 14px; border: 1px solid var(--line, #e5e7eb); border-radius: 12px;
+  background: #fff; overflow: hidden;
+}
+.np-qw-help-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; cursor: pointer; }
+.np-qw-help-title { font-size: 13.5px; font-weight: 600; }
+.np-qw-help-minus { color: #8a8f98; font-size: 14px; }
+.np-qw-help-body { padding: 0 14px 14px; }
+.np-qw-step-link {
+  display: inline-block;
+  margin: 6px 0;
+  font-size: 13px;
+  color: #d97757;
+  text-decoration: none;
+  cursor: pointer;
+}
+.np-qw-step-link:hover { text-decoration: underline; }
+/* 0.1.10：橙字下面的两段操作提示（0.17.24 曾把七步全删，这里只放用户明确要的两段） */
+.np-qw-tip { margin: 4px 0 2px; font-size: 12.5px; line-height: 1.7; color: var(--muted, #6b7280); }
+.np-qw-step { margin: 3px 0; padding-left: 1.2em; text-indent: -1.2em; font-size: 13px; line-height: 1.75; color: var(--ink, #1b1e24); }
+
+/* ---- 0.17.24：原型卡追加的几块（预报与提醒 / 地点） ---- */
+.np-qw-mt { margin-top: 18px; }
+.np-qw-path { margin: 2px 0 10px; font-size: 13px; color: var(--ink, #1b1e24); }
+.np-qw-cols { display: flex; gap: 14px; }
+.np-qw-col { flex: 1 1 0; min-width: 0; }
+.np-qw-searchrow { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.np-qw-searchrow > :first-child { flex: 1 1 auto; }
+
+.np-qw-badge-off { color: #8a8f98; background: rgba(0, 0, 0, 0.06); border-color: rgba(0, 0, 0, 0.18); }
+.np-qw-result { margin: 6px 0 0; font-size: 12.5px; color: #d97757; line-height: 1.6; }
+
+/* ---- 城市小时预报（0.17.26）：横排 12 格，可横向滚 ---- */
+.np-qw-hours { display: flex; gap: 10px; margin-top: 10px; padding-bottom: 4px; overflow-x: auto; }
+.np-qw-hour {
+  flex: 0 0 auto; min-width: 62px; padding: 8px 10px; text-align: center;
+  border: 1px solid var(--line, #e5e7eb); border-radius: 10px; background: #fff;
+}
+.np-qw-hour-t { font-size: 11.5px; color: #8a8f98; }
+.np-qw-hour-v { margin: 3px 0; font-size: 15px; font-weight: 600; }
+.np-qw-hour-d { font-size: 11px; color: #6b7280; white-space: nowrap; }
+
+/* ---- 0.17.27：卡最上面那块（实况 + 72 小时），按间隔自动刷新 ---- */
+.np-qw-live {
+  margin: 2px 0 16px; padding: 12px 14px 10px;
+  border: 1px solid var(--line, #e5e7eb); border-left: 3px solid #d97757; border-radius: 12px;
+  background: rgba(217, 119, 87, 0.04);
+}
+.np-qw-live-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.np-qw-live-title { font-size: 13px; font-weight: 600; }
+.np-qw-live-now { font-size: 13px; line-height: 1.7; color: var(--ink, #1b1e24); }
+.np-qw-live-days { margin-top: 8px; }
+.np-qw-day { margin-top: 8px; }
+.np-qw-day-t { font-size: 11.5px; color: #8a8f98; margin-bottom: 4px; }
+
+/* ---- 0.17.28：两天每日预报的行 ---- */
+.np-qw-daily {
+  display: flex; align-items: center; gap: 12px; padding: 7px 0;
+  border-top: 1px dashed rgba(0, 0, 0, 0.08); font-size: 12.5px;
+}
+.np-qw-daily:first-child { border-top: 0; }
+.np-qw-daily-d { flex: 0 0 92px; color: #8a8f98; }
+.np-qw-daily-w { flex: 1 1 auto; color: var(--ink, #1b1e24); }
+.np-qw-daily-t { flex: 0 0 auto; font-weight: 600; }
+.np-qw-daily-p { flex: 0 0 auto; color: #8a8f98; }
+
+/* ---- 0.17.29：实况三行 ---- */
+.np-qw-live-r1 { font-size: 13px; font-weight: 600; color: var(--ink, #1b1e24); }
+.np-qw-live-r2, .np-qw-live-r3 { margin-top: 3px; font-size: 12px; color: #6b7280; }
+
+/* ---- 0.17.30：卡片5「按天气听点什么」 ---- */
+.np-rc-sim { margin-left: 6px; font-size: 11px; color: #9aa0a6; }
+.np-card-wide + .np-card-wide { margin-top: 12px; }

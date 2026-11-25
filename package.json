@@ -1,0 +1,56 @@
+{
+  "name": "cortico-world-netease-play",
+  "version": "0.1.12",
+  "type": "module",
+  "description": "在 Coopanion 里点歌：按歌名搜、排到歌单最前、从第一首连续播放、记点歌次数，支持接力点歌与安静时间。",
+  "author": "胡伟",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./src/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/begood7912/cortico-world-netease-play.git"
+  },
+  "homepage": "https://github.com/begood7912/cortico-world-netease-play#readme",
+  "bugs": {
+    "url": "https://github.com/begood7912/cortico-world-netease-play/issues"
+  },
+  "files": [
+    "src/",
+    "py/",
+    "webui/",
+    "describe.json",
+    "ENV_PROMPT.md",
+    "README.md",
+    "INSTALL.md",
+    "PUBLISH.md"
+  ],
+  "keywords": [
+    "coopanion",
+    "cortico-world",
+    "netease",
+    "music",
+    "tts",
+    "网易云",
+    "点歌"
+  ],
+  "os": [
+    "win32"
+  ],
+  "cortico": {
+    "kind": "world",
+    "api": 6,
+    "displayName": "网易云陪听",
+    "describe": "describe.json",
+    "webUiClient": "webui/panel.js",
+    "webUiStyle": "webui/panel.css",
+    "tags": [
+      "音乐",
+      "网易云",
+      "语音",
+      "陪伴"
+    ]
+  }
+}

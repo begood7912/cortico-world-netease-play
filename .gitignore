@@ -1,0 +1,8 @@
+node_modules/
+data/
+release/
+*.log
+_bench_wx.mjs
+_probe_*.mjs
+_probe_*.ps1
+_restore_config.mjs
