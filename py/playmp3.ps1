@@ -1,4 +1,4 @@
-param([Parameter(Mandatory = $true)][string]$Path)
+﻿param([Parameter(Mandatory = $true)][string]$Path)
 $ErrorActionPreference = 'Stop'
 # 0.1.09：播 mp3（微软在线语音只能出 mp3，本机没 ffmpeg 就不转 wav）。
 # WPF MediaPlayer 自带解码，不依赖任何外部工具；不播完就退出 ——

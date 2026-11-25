@@ -1,9 +1,9 @@
 {
   "name": "cortico-world-netease-play",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "type": "module",
   "description": "让大肥鱼帮你点歌，不用动鼠标键盘：说出歌名就搜、排到歌单最前连续播放。仅支持网易云音乐，仅限 Windows 系统。",
-  "author": "胡伟",
+  "author": "ailing",
   "license": "MIT",
   "engines": {
     "node": ">=22"
