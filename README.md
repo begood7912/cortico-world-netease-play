@@ -1,9 +1,11 @@
 # 网易云陪听（cortico-world-netease-play）
 
-Coopanion 的一个 World 插件（`kind: world`，`api: 6`）：在桌面陪听里点歌、报幕、记账，
-并把「点歌 / 查账 / 查她想听什么 / 换一批推荐」交给主 AI 的四个工具。
+Coopanion 的一个 World 插件（`kind: world`，`api: 6`）：让大肥鱼帮你点歌，全程不用动鼠标键盘——
+说出歌名就搜索、排到歌单最前、从第一首连续播放，还能记账、聊「换一批推荐」。
 
-当前版本见 `package.json`（0.1.11）。开发记录与历史改动日志不随包发布（备份在 F 盘 `coopanion-world-netease-play.bak-*/开发记录-后续\`）。
+**只支持网易云音乐**（需要本机装有网易云音乐客户端），**仅限 Windows 系统**。
+
+当前版本见 `package.json`（0.1.13）。开发记录与历史改动日志不随包发布（备份在 F 盘 `coopanion-world-netease-play.bak-*/开发记录-后续\`）。
 **要装给别人用 → 看 `INSTALL.md`**（装什么、按什么顺序装、装完怎么自检，AI 可直接照着执行）。
 
 ## 它做什么
