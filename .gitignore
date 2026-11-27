@@ -5,4 +5,6 @@ release/
 _bench_wx.mjs
 _probe_*.mjs
 _probe_*.ps1
+_probe_*.json
+py/_probe_*.py
 _restore_config.mjs
