@@ -649,3 +649,19 @@ node -e "const j=require('./data/chart.json');console.log(new Date(j.at).toLocal
 
 - [x] **④ 调整计算逻辑，大幅减少计算任务，减少刷新歌曲卡顿** —— 已并入 `CHANGELOG.md` 第 4 条。
 - 四条齐了，文案定稿（0.1.22 / 2026-11-27）。下一步：删 `data\speak` 缓存 wav → 打包 → npm stage publish → 网页 Approve → 推送 GitHub。
+
+**0.1.22 已发布**（npm `version` / `dist-tags.latest` 都已是 0.1.22，`time.modified` 2026-11-27T01:06Z）。
+索引仓 `packages/cortico-world-netease-play.json` 仍是 `0.1.17`、无 `changelog` —— 因为索引靠
+`.github/workflows/sync.yml` 的 cron `17,47 * * * *`（每小时 :17 和 :47）扫 npm，下一次跑完才会把
+`## 0.1.22` 那段切进 `changelog`。想立刻生成：在索引仓开一个标题为 `[sync] cortico-world-netease-play` 的 issue。
+详情页读取慢是因为索引/包文件都从 `raw.githubusercontent.com` + `api.github.com` 拉（国内常卡），与本包无关。
+`git push` 仍被网络掐断（`Recv failure: Connection was aborted`），本地提交 `56e83a6` 在，待补推。
+
+## 0.1.24（11-27）：卡④「别人怎么说」显示改「{昵称}说：」+ 待改三点
+
+- 已改（webui）：昵称从 meta 行挪到正文前，单独一行「{昵称}说：」；`webui\panel.css` 新增 `.np-cm-say-nick`（13px、灰、正常换行）。只改面板，强制刷新即生效。
+- 实测底料（《情话Butterflies》/ 荣涉，353 条评论，连抽 6 次）：只出 3 条不同；163 赞「欢迎光柠」占了 4 次；混进「抖音来的[欣赏音乐]」(40 赞)。
+- 待改（用户口径「先记下来」）：
+  1. 连着重 —— 抽到后记住上一条，下一遍优先抽别的（同一昵称也避开）。
+  2. 水评论 —— 过滤「抖音来的 / 从XX来的」、纯表情、字数少于 8。
+  3. 赞数门槛 —— 低于 100 不进池（冷门歌可能凑不满 5 条，待商量）。

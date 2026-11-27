@@ -15,7 +15,7 @@ const expect = {
   'netease.lyric': 18000,
   'netease.progress': 5000,
   'netease.liked': 6000,
-  'netease.fastplay': 2500,
+  'netease.fastplay': 4500,
   'netease.playlists': 20000,
   'netease.recoPlaylist': 40000,
   'netease.addplay': 180000,

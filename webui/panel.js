@@ -778,8 +778,9 @@ export default {
           if (cm && cm.text) {
             const meta2 = el('div', 'np-cm-meta');
             meta2.append(el('span', 'np-cm-likes', `${fmtLikes(cm.likes)}人同意`));
-            if (cm.nick) meta2.append(el('span', 'np-cm-nick', cm.nick));
             commentCard.append(meta2);
+            /* 0.1.24（用户口径）：先说这句是谁说的，再贴正文 —— 「昵称说：」单独一行。 */
+            if (cm.nick) commentCard.append(el('p', 'np-cm-nick np-cm-say-nick', zh ? `${cm.nick}说：` : `${cm.nick} says:`));
             commentCard.append(el('p', 'np-cm-text', cm.text));
             if (Number(cm.total) > 0) {
               commentCard.append(el('p', 'np-muted np-cm-total', t.commentTotal(fmtLikes(cm.total))));

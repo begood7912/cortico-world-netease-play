@@ -757,3 +757,13 @@
 /* ---- 0.17.30：卡片5「按天气听点什么」 ---- */
 .np-rc-sim { margin-left: 6px; font-size: 11px; color: #9aa0a6; }
 .np-card-wide + .np-card-wide { margin-top: 12px; }
+/* 0.1.24（用户口径）：评论卡先说「谁说的」，再贴正文。 */
+.np-cm-say-nick {
+  margin: 0 0 6px;
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  color: var(--ink-dim, #9ca3af);
+}

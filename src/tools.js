@@ -56,7 +56,10 @@ export const PLAY_DECL = {
     + '他说"放几首"但没给歌名时，你自己先挑好再调，并传 auto=true（歌是你选的，不记账）。'
     + '你自己主动挑的歌也必须传 auto=true。'
     + '一次可以给一到多首，会按给的顺序连续播放。'
-    + '放好以后只回一句「现在为你播放{歌手}的《{歌名}》」；不知道歌手就说「现在为你播放《{歌名}》」。'
+    + '他说出来的歌名经常是错的（同音字、只记得大意、语音听错）：先自己认准「正式歌名 + 原唱歌手」再传，名字拿不准就把两三种写法放进 alt。'
+    + '放好以后按**实际放出来的歌手**回话：真放到了原唱就一句「现在为你播放{歌手}的《{歌名}》」；'
+    + '不是原唱（翻唱、别人的版本、搬运号）必须当场说清「没找到{原唱}的原唱，现在放的是{实际歌手}的版本《{歌名}》」，不要用原唱的名字冒充。'
+    + '判断依据是工具返回里写的「实际歌手」，不要自己猜哪个是原唱。'
     + CUA_RULE,
   parameters: {
     type: 'object',
@@ -68,11 +71,11 @@ export const PLAY_DECL = {
           type: 'object',
           properties: {
             name: { type: 'string', description: '歌名' },
-            artist: { type: 'string', description: '歌手，知道就填，能提高搜准率' },
+            artist: { type: 'string', description: '原唱歌手（不是翻唱的人），知道就填，能提高搜准率' },
             alt: {
               type: 'array',
               items: { type: 'string' },
-              description: '备选叫法，比如"七里香 钢琴版"',
+              description: '备选叫法（同音字、简写、带歌手的写法都行），最多 3 个',
             },
           },
           required: ['name'],
@@ -175,7 +178,8 @@ function fmtPlay(r) {
       const nm = a.name || a.title || '?';
       const ar = a.matched_artist || a.artist || a.artists || '';
       const cnt = a.count ?? j.ledger?.counts?.[String(a.id)];
-      lines.push(`- ${nm}${ar ? ` / ${ar}` : ''}${cnt ? `（第 ${cnt} 次）` : ''}`);
+      const sus = String(a.suspect || '').trim();
+      lines.push(`- ${nm}${ar ? ` / ${ar}` : ''}${cnt ? `（第 ${cnt} 次）` : ''}${sus ? `　${sus}` : ''}`);
     }
   } else {
     lines.push('一首都没加进去。');
@@ -201,11 +205,22 @@ function fmtPlay(r) {
   const first = added[0] || played || null;
   if (first) {
     const nm = String(first.name || first.title || '').trim();
-    const ar = String(first.matched_artist || first.artist || first.artists || '').trim();
-    if (nm) {
-      lines.push(ar
-        ? `回他一句就行：现在为你播放${ar}的《${nm}》。`
-        : `回他一句就行：现在为你播放《${nm}》。`);
+    const ar = String(first.matched_artist || first.artists || '').trim();
+    const asked = String(first.artist || '').trim();
+    const sus = String(first.suspect || '').trim();
+    // 标题/歌手里带这些词，一看就不是原版
+    const VERSION_WORDS = /翻唱|cover|live|现场|dj|伴奏|纯音乐|remix|烟嗓|女声|男声|童声|钢琴|吉他|抖音|片段|demo|remake/i;
+    const aLow = ar.toLowerCase();
+    const askedLow = asked.toLowerCase();
+    const looksOriginal = !!askedLow && aLow.includes(askedLow) && !VERSION_WORDS.test(nm + ' ' + ar);
+    if (nm && looksOriginal) {
+      lines.push(`回他一句就行：现在为你播放${ar}的《${nm}》。`);
+    } else if (nm) {
+      // 说不准是不是原唱 → 把「实际放出来的这首」摆出来，由模型自己判断怎么说
+      lines.push(`实际放出来的是：${nm}${ar ? ` - ${ar}` : ''}${sus ? `；${sus}` : ''}`);
+      lines.push(`你报的原唱：${asked || '（没说）'}`);
+      lines.push(`回他时按**实际放出来的这首**说：是原唱就只说「现在为你播放${ar || ''}的《${nm}》」；`
+        + `不是原唱（翻唱、别人的版本、搬运号）必须说「没找到${asked || '原唱'}的原唱，现在放的是${ar || '别人'}的版本《${nm}》」，不要用原唱的名字冒充。判断不了是不是原唱时，按「不是原唱」说 —— 宁多说一句，也不要冒充原唱。`);
     }
   }
   if (j.ledger?.fav_added?.length) {
