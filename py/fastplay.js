@@ -16,8 +16,22 @@ const t0 = Date.now();
 const { readFileSync, writeFileSync } = await import("node:fs");
 const { join, dirname } = await import("node:path");
 const { fileURLToPath } = await import("node:url");
+/* 0.1.21（用户口径）：把 4.5 秒一刀切改成**分段预算**，每段自己计时。
+   以前等页面标题就给了 4 秒、切歌单又 3 秒，冷态时还没走到「删+加」整条就超时了；
+   实测正路只用 1.1~1.5 秒（del 90ms / add 80ms / 等第一行 350~560ms / 点击确认 250~350ms）。 */
+const stages = {};
+let tMark = t0;
+const mark = (k) => {
+  const n = Date.now();
+  stages[k] = n - tMark;
+  tMark = n;
+  // 0.1.21：超时那一刻进程会被 kill、done() 来不及跑 —— 每段顺手写一行 stderr，
+  // 这样 `fast.out/err` 里能看到「卡在哪一段」，不用再猜。
+  try { process.stderr.write(`stage ${k}=${stages[k]}ms\n`); } catch { /* ignore */ }
+};
 const done = (o) => {
   o.ms = Date.now() - t0;
+  if (Object.keys(stages).length) o.stages = stages;
   console.log(JSON.stringify(o));
   process.exit(0);
 };
@@ -38,6 +52,8 @@ const wantName = String(want.title || want.name || "").trim();
 const wantArtist = String(want.artist || "").trim();
 const wantPlaylist = String(want.playlist || "").trim();
 let wantId = String(want.songId || want.id || "").trim();
+// 0.1.21：重试那一趟跳过「等页面标题」——页面早就热了，再等纯属浪费预算
+const SKIP_HEAD = !!want.skipHead;
 if (!wantName) done({ ok: false, reason: "no-title" });
 
 // 行文本归一：整段去掉括号（「素颜（Live）」「[SQ]」这类后缀/标记），再去空白和分隔符，然后比
@@ -262,17 +278,24 @@ async function cookies() {
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
 
 async function apiPost(path, form, cookie) {
-  const r = await fetch(`https://music.163.com${path}`, {
-    method: "POST",
-    headers: {
-      "User-Agent": UA,
-      Referer: "https://music.163.com/",
-      "Content-Type": "application/x-www-form-urlencoded",
-      Cookie: cookie,
-    },
-    body: new URLSearchParams(form).toString(),
-  });
-  return r.json();
+  /* 0.1.22：实测 add 请求偶尔会挂住（《归期雨抄》两趟各 8 秒/5 秒 timeout，stderr 只到 switch 段），
+     一刀切 2.5 秒超时——挂了就当这趟失败，交给上层重试第二趟，不要让它吃光整趟预算。 */
+  try {
+    const r = await fetch(`https://music.163.com${path}`, {
+      method: "POST",
+      headers: {
+        "User-Agent": UA,
+        Referer: "https://music.163.com/",
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: cookie,
+      },
+      body: new URLSearchParams(form).toString(),
+      signal: AbortSignal.timeout(2500),
+    });
+    return r.json();
+  } catch (e) {
+    return { code: -1, message: `api-timeout:${e && e.name ? e.name : e}` };
+  }
 }
 
 async function searchId(cookie, name, artist) {
@@ -321,16 +344,20 @@ try {
   // 后面直接判 no-playlist-in-sidebar（11-25 17:51 现场：head 为空）。
   // 先等标题出来，最多等 4 秒；等不到再按老逻辑往下走。
   let head0 = await pageHead();
-  for (let i = 0; i < 20 && !head0; i += 1) {
-    await sleep(200);
+  // 0.1.21：冷启动等标题 20×200（最多 4 秒）→ 4×180（约 0.9 秒）；重试那一趟直接跳过。
+  for (let i = 0; i < (SKIP_HEAD ? 1 : 4) && !head0; i += 1) {
+    await sleep(180);
     head0 = await pageHead();
   }
+  mark("head");
 
   // ① 当前列表第一行就是这首歌 → 直接双击
   const r0 = await firstRowUsable();
   if (r0 && (r0.txt || "").includes(wantName) && (!wantPlaylist || head0 === wantPlaylist)) {
+    mark("already-check");
     await dblRow(r0);
-    const p = await waitPlaying();
+    const p = await waitPlaying(16);
+    mark("click");
     // 第 116 节：和主路径同一个坑 —— 点了不等于响了。
     // 而且**有 id 就只认 id**（用户 108.2 口径：id 在这边全局唯一，不可能指错歌），
     // 文本比对只留给「本来就没有 id」的旧链路。
@@ -357,7 +384,7 @@ try {
     // 0.1.17（B3）：侧栏是懒渲染的 —— 刚切入/刚启动时这一项可能还没画出来，
     // 老逻辑一取不到就报 no-playlist-in-sidebar。改成最多重试 8 次（约 1.6 秒）。
     let item = "";
-    for (let i = 0; i < 8; i += 1) {
+    for (let i = 0; i < (SKIP_HEAD ? 3 : 6); i += 1) {
       item = await ev(`(()=>{
       const all=[...document.querySelectorAll('[class*=PlayListItemContent]')];
       for(const e of all){ if((e.textContent||'').trim()!==${JSON.stringify(wantPlaylist)}) continue;
@@ -365,17 +392,27 @@ try {
         return JSON.stringify({x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}); }
       return ''})()`);
       if (item) break;
-      await sleep(200);
+      await sleep(150);
     }
     if (!item) done({ ok: false, reason: "no-playlist-in-sidebar", head: head0 });
     const p = JSON.parse(item);
     await click(p.x, p.y, 1);
-    for (let i = 0; i < 12; i += 1) {
-      await sleep(110);
+    // 0.1.21：12×110（1.3 秒）→ 10×90（0.9 秒），实测切完 350~400ms 列表就出来了
+    for (let i = 0; i < 10; i += 1) {
+      await sleep(90);
       if ((await pageHead()) === wantPlaylist) break;
+    }
+    // 0.1.21（实测踩到的坑）：标题对上≠列表画完。列表还在加载时就去 del+add，
+    // 新行要等 2.6 秒才冒出来（「耻辱柱」那次就是，白耗一趟重试）。
+    // 这里再多等「第一行真的画出来」，最多 1.2 秒（列表本来有歌，通常 400ms 内就有）。
+    for (let i = 0; i < 13; i += 1) {
+      const rr = await firstRow();
+      if (rr) break;
+      await sleep(90);
     }
     how = "switched";
   }
+  mark("switch");
 
   // ③ 定 id（没有就搜） → del + add 顶到第一位
   const jar = await cookies();
@@ -406,21 +443,34 @@ try {
   }
   how = how || "add-then-first";
 
+  mark("api");
+
   // ④ 等第一行变成这首歌，然后点它
-  // 0.16.66（第 92 节 G）：以前只比歌名 —— 同名不同歌手（翻唱、别人的同名曲）就会被认成目标，
-  // 于是「报的是 A、响的是同名的 B」。现在给了歌手就一起校验：歌手栏可能写「陈奕迅/王菲」，
-  // 所以按分隔符拆开，只要有一段对上就算这首歌。
+  // 0.1.21：12×90（1.1 秒）→ 26×90（2.3 秒）。实测加完 345~563ms 就到位，这里给足余量；
+  // 超时才是真失败（以前 1.1 秒卡死过几次「第一行还没刷新出来」）。
   // 0.17.41：`rowMatches` 已提到文件上方（① 分支也要用，原来这里有 TDZ）。
   let row = null;
-  for (let i = 0; i < 12; i += 1) {
+  for (let i = 0; i < 26; i += 1) {
     await sleep(90);
     const r = await firstRowUsable();
     if (r && rowMatches(r.txt)) { row = r; break; }
   }
+  mark("row");
   if (!row) done({ ok: false, reason: "first-row-not-target", how, id: wantId, searched, wantName, wantArtist });
 
   await dblRow(row);
-  const playing = await waitPlaying();
+  /* 0.1.22（用户实测「每一个都要点两次才能成功」）：根子在「刚加进歌单的新歌」——
+     add 之后那一行虽然画出来了，客户端还没把这行绑好，第一下点下去播放条不亮（实测要 2.6 秒以上），
+     人再点第二下才 249ms 就响。所以不再干等：**先看一眼 0.7 秒，没响就当场再点一下**，
+     然后给足 3.6 秒确认。这样一次尝试内部就补上了第二下，不用退回给用户重点。 */
+  let playing = await waitPlaying(8);
+  let clicks = 1;
+  if (!playing) {
+    await dblRow(row);
+    clicks = 2;
+    playing = await waitPlaying(40);
+  }
+  mark("click");
   // 第 115 节：**必须确认它真响起来了**才算成功。
   // 原来这里写的是 `ok: true`（注释「点了就算成功」），实测代价很大：
   // 列表第一行换成了目标、播放条却一声没响，照样回报 ok →
@@ -432,6 +482,7 @@ try {
   done({
     ok: confirmed,
     clicked: true,
+    clicks,
     confirmed,
     // 点了、但播放条没证明它响了 → 失败，交给上层按第 93 节重试（20 秒一次、最多 3 次）
     reason: confirmed ? undefined : "clicked-not-playing",

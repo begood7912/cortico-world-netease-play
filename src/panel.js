@@ -30,7 +30,7 @@ import { settingsSnapshot, settingsSet, settingsSetMany, aboutInfo, weatherSnaps
 // 0.17.30：天气查询独立成模块，模型页与此刻页共用
 import { weatherNow, fetchWeather, wxProbe } from './qweather.js';
 // 0.17.30：卡片5 —— 按天气挑歌（此刻页，卡①下面那张）
-import { peekWxReco, refreshWxReco, scheduleWxReco, dropWxSong } from './wxreco.js';
+import { peekWxReco, rerollWxPick, dropWxSong, peekNextWx, nextWxSong, takeWxCand, undoWxPick } from './wxreco.js';
 // 0.17.39：来源开关（设置里那个 2 选 1）—— 决定哪张卡有数据、哪张卡显示「已停用」。
 import { activeSource, isHistoryActive, isWeatherActive } from './source.js';
 // 0.17.43（A8）：用户动作统一入口
@@ -463,9 +463,9 @@ async function nowSnapshot(cfg, ctx) {
   // 0.17.45（B2）：进程探测改成异步，先 await 一次再拼快照（30 秒缓存，不会每帧起进程）
   const clientRunning = await clientProcessRunning();
 
-  /* 0.17.51（用户口径）：天气卡要显示「自动播放会放的那一首」——
-     和 pickWxSong 同口径：排除正在放的 / 当前 base / 已递出的 offer / 已挑好的 next，
-     取顺位第一首。前端不再自己猜 items[0]。 */
+  /* 0.1.19（007）：天气卡要显示「自动播放会放的那一首」——现在它是**下一句算出来的那首**。
+     重算一次只要 20 毫秒（本轮 100 首向量早就在内存里），且结果按句子缓存，
+     真递歌时用的就是同一份，不会再出现「预告 A、实际放 B」。 */
   let wxNext = null;
   if (wxOn) {
     const ch = peekChain() || {};
@@ -475,8 +475,10 @@ async function nowSnapshot(cfg, ctx) {
       (ch.offer && ch.offer.name) || '',
       (ch.next && ch.next.name) || '',
     ].filter(Boolean);
-    const list = (wxSnap.items || []).filter((it) => it && it.name && !ex.some((e) => sameKey(e, it.name)));
-    if (list[0]) wxNext = { name: list[0].name, artist: list[0].artist || '', id: list[0].id || '' };
+    try {
+      const p = await peekNextWx(cfg, { exclude: ex });
+      if (p) wxNext = { name: p.name, artist: p.artist || '', id: p.id || '', cands: p.cands || [] };
+    } catch { wxNext = null; }
   }
 
   return {
@@ -596,9 +598,8 @@ async function nowSnapshot(cfg, ctx) {
            《冷夜》、实际会放《颜色》。现在只喂那一首。 */
         let rc;
         if (wxOn) {
-          const list = (wxSnap.items || [])
-            .filter((it) => it && it.name && !exclude.some((e) => e && sameKey(e, it.name)));
-          rc = list.length ? { at: wxSnap.at || 0, items: list.slice(0, 1) } : null;
+          // 0.1.19（007）：天气这一路不再有「5 首候选」，预告就是下一句算出来的那一首
+          rc = wxNext ? { at: wxSnap.at || 0, items: [wxNext] } : null;
         } else {
           rc = peekRecommend(cfg);
         }
@@ -790,13 +791,52 @@ export async function panelInvoke(cfg, panel, method, args, ctx, worldIn) {
       if (!world || typeof world.answerIdle !== 'function') return { ok: false, error: '世界还没就绪' };
       return world.answerIdle(a.yes !== false);
     }
-    // 0.17.30：卡片5「按天气听点什么」的「换一批」/ 点了里面的歌之后的重新计算
-    // 0.17.35：改成后台排队 2.5 秒再算 —— 不立刻查天气（吃 qwInterval 那份缓存），
-    // 先等一小段再出结果；连续点几下只算最后一次，面板期间照旧显示上一批。
+    // 0.17.30：卡片5「按天气听点什么」的「换一批」
+    // 0.1.19（用户口径）：不再是整批重开 —— 点一下丢掉当前这一句 + 它配的那首，
+    // 用下一句重算一首；划到第 4 句时后台备料照旧启动，点满一轮再点才开新一轮。
     if (method === 'wxRecoRefresh') {
       // 0.17.39：来源不是天气 → 这张卡已经「已停用」，不许再把它叫醒。
       if (!isWeatherActive(c)) return { ok: false, reason: 'inactive' };
-      return scheduleWxReco(c, { delayMs: Number(a.delayMs) > 0 ? Number(a.delayMs) : 2500 });
+      // 正在放的那首要排掉，别换出来又是同一条
+      let playing = '';
+      try { const nw = await currentTrack(); playing = String((nw && nw.playing && nw.title) || ''); } catch { playing = ''; }
+      return rerollWxPick(c, { exclude: playing ? [playing] : [] });
+    }
+    /* 0.1.19（用户口径「句子出来了、歌没出来」补的）：面板空列表里那行「下一首」点一下 =
+       真把这句投出去并开始放（消耗一句、这首进列表）。和自动接力递歌走同一个 nextWxSong，
+       所以不会出现「点了这首，结果放的还是别的」。 */
+    if (method === 'wxNextPlay') {
+      if (!isWeatherActive(c)) return { ok: false, reason: 'inactive' };
+      let playing = '';
+      try { const nw = await currentTrack(); playing = String((nw && nw.playing && nw.title) || ''); } catch { playing = ''; }
+      const s = await nextWxSong(c, { exclude: playing ? [playing] : [] });
+      if (!s) return { ok: false, error: '这一轮没有可播的下一首' };
+      const rr = await playTrack(c, { title: s.name, artist: s.artist, songId: s.id, source: 'wx' }, panel);
+      // 0.1.20：点了没放出来 → 这次投递撤回去，这句/这首留着重试（不再「没放成还少一首」）
+      if (!rr || rr.ok === false) {
+        const back = undoWxPick(c, { name: s.name, artist: s.artist });
+        return { ...(rr || { ok: false, error: '没放出来' }), undone: back };
+      }
+      return rr;
+    }
+    /* 0.1.19（用户口径「以前不是还有五首候选吗」）：点候选列表里的某一首 =
+       就用当前这一句把它投出去并播放（和自动接力一样消耗一句、进已投列表）。 */
+    if (method === 'wxTakeCand') {
+      if (!isWeatherActive(c)) return { ok: false, reason: 'inactive' };
+      let playing = '';
+      try { const nw = await currentTrack(); playing = String((nw && nw.playing && nw.title) || ''); } catch { playing = ''; }
+      const s = await takeWxCand(c, {
+        id: String((a && a.id) || ''),
+        name: String((a && a.name) || ''),
+        exclude: playing ? [playing] : [],
+      });
+      if (!s) return { ok: false, error: '这一句没有可选的歌了' };
+      const rr = await playTrack(c, { title: s.name, artist: s.artist, songId: s.id, source: 'wx' }, panel);
+      if (!rr || rr.ok === false) {
+        const back = undoWxPick(c, { name: s.name, artist: s.artist });
+        return { ...(rr || { ok: false, error: '没放出来' }), undone: back };
+      }
+      return rr;
     }
     // 「重新推荐」按钮：AI 也能通过 netease_reco_refresh 触发同一条
     if (method === 'recoRefresh') {

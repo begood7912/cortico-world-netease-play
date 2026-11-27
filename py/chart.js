@@ -105,15 +105,20 @@ async function evaluate(expr) {
   }
 }
 
-function normalize(list) {
+function normalize(list, trackCount) {
+  const total = Number(trackCount) || (list || []).length;
   return (list || [])
-    .map((s) => ({
+    .map((s, i) => ({
       id: String(s.id || ''),
       name: String(s.name || '').trim(),
       artist: ((s.ar || s.artists) || []).map((a) => a.name).join('/'),
       album: String((s.al && s.al.name) || (s.album && s.album.name) || ''),
       // 第 111 节：时长（毫秒）。tracks 本来就有 dt，以前白扔了
       durMs: Number(s.dt || s.duration || 0) || 0,
+      // 榜内名次（1 = 榜首），顺序就是榜单自己排的位置；rankOf = 该榜总曲数，
+      // 跨榜比较必须用 rank/rankOf 的百分位，不能拿绝对名次直接比。
+      rank: i + 1,
+      rankOf: total,
     }))
     .filter((s) => s.name && s.id);
 }
@@ -133,7 +138,7 @@ async function main() {
           const pl = j && j.playlist;
           const tracks = ((pl && pl.tracks) || []).slice(0, take);
           res.push({ id: String(id), ok: !!(pl && pl.tracks), name: pl && pl.name,
-                     updateTime: pl && pl.updateTime, tracks });
+                     updateTime: pl && pl.updateTime, trackCount: pl && pl.trackCount, tracks });
         } catch (e) {
           res.push({ id: String(id), ok: false, error: String(e).slice(0, 160) });
         }
@@ -152,7 +157,7 @@ async function main() {
 
   const out0 = { ok: true, ids: IDS, take: TAKE, charts: [], updateTime: 0, errors: [] };
   for (const r of res) {
-    const songs = normalize(r.tracks);
+    const songs = normalize(r.tracks, r.trackCount);
     if (!r.ok || !songs.length) {
       out0.errors.push(`${r.id}: ${r.error || '空'}`);
       continue;

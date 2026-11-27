@@ -644,6 +644,48 @@ export default {
           }
         };
 
+        /* 0.1.19：点列表里那行「下一首」= 把它真投出去并放（后端 nextWxSong 消耗一句） */
+        const wxTake = async (nm) => {
+          if (wxBusy) return;
+          wxBusy = true;
+          nm.classList.add('np-busy');
+          try {
+            const r = await ctx.invoke('wxNextPlay', [{}]);
+            if (r && r.ok === false) {
+              ui.toast(r.reason === 'inactive' ? t.inactive : (r.error || r.reason || (zh ? '没放成' : 'Failed')), 'bad');
+            } else if (r && r.message) {
+              ui.toast(r.message, 'ok');
+            }
+          } catch (e) {
+            ui.toast(e instanceof Error ? e.message : String(e), 'bad');
+          } finally {
+            wxBusy = false;
+            nm.classList.remove('np-busy');
+            void tick(true);
+          }
+        };
+
+        /* 0.1.19：点候选里的某一首 = 用当前这一句把它投出去并放（后端 takeWxCand） */
+        const wxTakeCand = async (nm, cd) => {
+          if (wxBusy) return;
+          wxBusy = true;
+          nm.classList.add('np-busy');
+          try {
+            const r = await ctx.invoke('wxTakeCand', [{ id: (cd && cd.id) || '', name: (cd && cd.name) || '' }]);
+            if (r && r.ok === false) {
+              ui.toast(r.reason === 'inactive' ? t.inactive : (r.error || r.reason || (zh ? '没放成' : 'Failed')), 'bad');
+            } else if (r && r.message) {
+              ui.toast(r.message, 'ok');
+            }
+          } catch (e) {
+            ui.toast(e instanceof Error ? e.message : String(e), 'bad');
+          } finally {
+            wxBusy = false;
+            nm.classList.remove('np-busy');
+            void tick(true);
+          }
+        };
+
         const draw = (s) => {
           /* 头部 */
           const st = s || {};
@@ -976,7 +1018,9 @@ export default {
           const wxBtn = el('button', 'np-rc-again', wxBusy ? t.recoAgainBusy : t.recoAgain);
           wxBtn.type = 'button';
           wxBtn.disabled = wxBusy || !wxOn;
-          wxBtn.title = zh ? '重新算一批（天气仍用最近一次查询结果，后台等一下再出）' : 'Recompute in the background (reuses the last weather snapshot)';
+          wxBtn.title = zh
+            ? '换掉这一句和它配的那一首（本轮剩的少一首，不整批重开）'
+            : 'Drop this line and its song (one less left this round, no full rebuild)';
           wxBtn.addEventListener('click', () => void wxAgain(wxBtn));
           wxHead.append(wxBtn);
           wxCard.append(wxHead);
@@ -991,30 +1035,79 @@ export default {
             const atNote = wxAt
               ? (zh ? `　·　更新于 ${new Date(wxAt).toLocaleTimeString()}` : ` · updated ${new Date(wxAt).toLocaleTimeString()}`)
               : '';
+            // 0.1.19（007）：这一轮还剩几首没投
+            const wleftN = Math.max(0, Number(wr.left) || 0);
+            const wleft = wleftN
+              ? (zh ? `　·　本轮还剩 ${wleftN} 首` : ` · ${wleftN} left this round`)
+              : '';
             /* 0.17.48：天气那句话挪到「天气点歌已开启」那一行（和挑到的歌名一起），这里不再重复 */
             wxCard.append(el('p', 'np-muted np-rc-hint', zh
-              ? `按天气挑的${wplace ? `　·　${wplace}` : ''}${atNote}${staleNote}`
-              : `Picked by weather${wplace ? ` · ${wplace}` : ''}${atNote}${staleNote}`));
+              ? `按天气挑的${wplace ? `　·　${wplace}` : ''}${wleft}${atNote}${staleNote}`
+              : `Picked by weather${wplace ? ` · ${wplace}` : ''}${wleft}${atNote}${staleNote}`));
           }
-          if (wr.items && wr.items.length) {
+          /* 0.1.19（007）：这一行**始终显示**（哪怕本轮一首还没投）——
+             `wr.line` 是刚投那首的句子，`wr.next` 是下一句算出来的那首；
+             换轮后 wr.line 变成新一轮第 1 句，这里跟着刷新。 */
+          const wxLine = String(wr.line || '').trim();
+          const csWx = st.chainState || {};
+          const wxPicked = !!(csWx.kind === 'picked' && !csWx.idle);
+          const wxFirst = (wr.next && wr.next.name) ? String(wr.next.name) : '';
+          const wxSong = wxPicked ? String(csWx.name || '') : wxFirst;
+          /* 列表里已经有这首了就不再在上面重复写一遍歌名（只有「下一首」那行时，歌名放在列表里） */
+          const wxBarSong = (wxPicked || (wr.items && wr.items.length)) ? wxSong : '';
+          if (wxLine) {
+            const wbar = el('div', 'np-chain');
+            wbar.append(el('span', 'np-chain-label', wxPicked ? t.chainModeWeather : (zh ? '天气推荐' : 'Weather pick')));
+            wbar.append(el('span', 'np-chain-say', wxBarSong ? `「${wxLine}」→《${wxBarSong}》` : `「${wxLine}」`));
+            wxCard.append(wbar);
+          }
+          /* 0.1.19（用户口径 11-27「以前不是还有五首候选吗」）：把这一句算出来的 5 首摆回来，
+             点哪首就用这一句放哪首（等于投出这一首）；不点就等自动接力按随机那首投。 */
+          const wcands = (wr.next && Array.isArray(wr.next.cands)) ? wr.next.cands : [];
+          if (wcands.length) {
+            const clist = el('ul', 'np-rc-list np-rc-cands');
+            for (const cd of wcands) {
+              const row = el('li', 'np-rc-item');
+              const cn = el('span', 'np-rc-name np-playable', `《${cd.name}》`);
+              cn.title = zh
+                ? `点一下就用这一句放《${cd.name}》（等于投出这一首）`
+                : `Play ${cd.name} with this line`;
+              cn.addEventListener('click', () => void wxTakeCand(cn, cd));
+              row.append(cn);
+              if (cd.artist) row.append(el('span', 'np-rc-artist', cd.artist));
+              if (cd.rank) row.append(el('span', 'np-rc-from', `#${cd.rank}`));
+              if (cd.sim) row.append(el('span', 'np-rc-sim', `${Math.round(cd.sim * 100)}%`));
+              clist.append(row);
+            }
+            wxCard.append(clist);
+          }
+          /* 0.1.19（用户口径「句子出来了、歌没出来」）：列表装的是「本轮已投出去的」，
+             空的时候上面那排候选就是可以点的歌，不再另塞一行「下一首」。 */
+          const wrows = (wr.items && wr.items.length) ? wr.items.slice() : [];
+          if (wrows.length) {
             const wlist = el('ul', 'np-rc-list');
             const wfmtDur = (ms) => {
               const sec = Math.round((Number(ms) || 0) / 1000);
               if (sec < 30) return '';
               return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
             };
-            for (const it of wr.items) {
+            for (const it of wrows) {
               const row = el('li', 'np-rc-item');
               const nm = el('span', 'np-rc-name np-playable', `《${it.name}》`);
-              nm.title = zh
-                ? `点一下播这首《${it.name}》${it.artist ? ` — ${it.artist}` : ''}（会记一次点歌）`
-                : `Play ${it.name}`;
-              nm.addEventListener('click', () => void playOne({ title: it.name, artist: it.artist, songId: it.id }, nm, 'wx'));
+              nm.title = it.__next
+                ? (zh ? `点一下就把这一句配《${it.name}》放出来（等于投出这一首）` : `Play ${it.name} now`)
+                : (zh
+                  ? `点一下播这首《${it.name}》${it.artist ? ` — ${it.artist}` : ''}（会记一次点歌）`
+                  : `Play ${it.name}`);
+              nm.addEventListener('click', () => void (it.__next
+                ? wxTake(nm)
+                : playOne({ title: it.name, artist: it.artist, songId: it.id }, nm, 'wx')));
               row.append(nm);
               if (it.artist) row.append(el('span', 'np-rc-artist', it.artist));
               if (it.album) row.append(el('span', 'np-rc-album', it.album));
               const wdur = wfmtDur(it.durMs);
               if (wdur) row.append(el('span', 'np-rc-dur', wdur));
+              if (it.__next) row.append(el('span', 'np-rc-from', zh ? '下一首' : 'next'));
               const wsrc = it.from || '';
               if (wsrc) row.append(el('span', 'np-rc-from', wsrc));
               // 相似度只给一个百分比小字，方便一眼看出「像不像今天的天气」
@@ -1022,35 +1115,29 @@ export default {
               wlist.append(row);
             }
             wxCard.append(wlist);
-            /* 0.17.49（用户口径）：天气那句话**常驻显示**，即使没开接力；
-               后面永远跟「计算出来、自动播放会放的那首」——
-               已挑定就用挑定的那首，否则用天气名单的顺位第一（pickWxSong 的实际取法）。
-               换一批 / 启动刷新后，`wr.line` 和名单更新，这里跟着变。 */
-            const wxLine = String(wr.line || '').trim();
-            const csWx = st.chainState || {};
-            const wxPicked = !!(csWx.kind === 'picked' && !csWx.idle);
-            const wxFirst = (wr.next && wr.next.name)
-              ? String(wr.next.name)
-              : ((wr.items && wr.items[0] && wr.items[0].name) ? String(wr.items[0].name) : '');
-            const wxSong = wxPicked ? String(csWx.name || '') : wxFirst;
-            if (wxLine) {
-              const wbar = el('div', 'np-chain');
-              wbar.append(el('span', 'np-chain-label', wxPicked ? t.chainModeWeather : (zh ? '天气推荐' : 'Weather pick')));
-              wbar.append(el('span', 'np-chain-say', wxSong ? `「${wxLine}」→《${wxSong}》` : `「${wxLine}」`));
-              wxCard.append(wbar);
-            }
-          } else {
+          } else if (!wcands.length) {
             const why = String(wr.reason || '');
-            let wnote = zh ? '正在按天气挑…' : 'Picking by weather…';
+            let wnote = zh
+              ? (wr.ok ? '这一轮还没投出歌来' : '正在按天气挑…')
+              : (wr.ok ? 'Nothing picked yet this round' : 'Picking by weather…');
             if (why === 'inactive') wnote = t.inactive;
             else if (why === 'weather-fail') wnote = zh ? `天气没查到：${wr.error || '—'}` : `Weather failed: ${wr.error || '—'}`;
             else if (why === 'weather-stale') wnote = zh ? `天气数据 ${wr.staleMin || '?'} 分钟没更新，这张先停用` : `Weather data is ${wr.staleMin || '?'} min old`;
             else if (why === 'no-pool') wnote = zh ? '候选池是空的（先让榜单拉一次歌）' : 'Song pool is empty';
             else if (why === 'no-embed') wnote = zh ? '没选向量模型（设置页挑一个）' : 'No embedding model';
+            else if (why === 'boot-wait') wnote = zh ? '刚启动，四分钟后再算（想现在看就点「换一批」）' : 'Just started — picks in 4 min (or hit Refresh now)';
+            else if (why === 'round-end') wnote = zh ? '这一轮投完了，正在接下一轮…' : 'Round finished — loading the next one…';
             else if (why === 'fail') wnote = zh ? `算不出来：${wr.error || '—'}` : `Failed: ${wr.error || '—'}`;
             const wp = el('p', 'np-muted', wnote);
             if (why === 'pending' || why === 'stale' || why === 'picking') wp.className = 'np-muted np-hearing';
             wxCard.append(wp);
+          }
+          /* 0.1.19：一句一句地丢，丢满一轮（left 归零）就没有下一句可换了 —— 说清楚，
+             别让人以为卡坏了；再点一次「换一批」才开新一轮（那一轮还得等它算完）。 */
+          if (!wxLine && Number(wr.left) === 0 && wr.ok) {
+            wxCard.append(el('p', 'np-muted', zh
+              ? '这一轮的句子用完了，再点「换一批」开新一轮（算好之前会等一会儿）'
+              : 'Round used up — hit Refresh for a new round (it waits until it is ready)'));
           }
 
           /* 0.17.43（D1）：接力/客户端/安静这些共用提示，挂到**当前显示的那张卡**下面。

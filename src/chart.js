@@ -169,6 +169,9 @@ export function chartSongs(chart) {
         album: s.album || '',
         id: s.id || '',
         durMs: Number(s.durMs || 0) || 0,
+        // 榜内名次与榜长：跨榜只能用 rank/rankOf 的百分位比较
+        rank: Number(s.rank) || 0,
+        rankOf: Number(s.rankOf) || 0,
         from,
       });
       if (out.length >= POOL_CAP) return true;

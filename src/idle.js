@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { chatAny, hasModel, modelLabel } from './ollama.js';
 import { peekRecommend } from './recommend.js';
 // 0.17.40（用户口径「随现在选择的卡片执行」）：安静时想听哪首，也跟来源开关走。
-import { peekWxReco } from './wxreco.js';
+import { peekWxReco, peekNextWx } from './wxreco.js';
 import { isWeatherActive } from './source.js';
 import { readListens } from './listening.js';
 // 0.16.86（第 132 节 A4）：歌名比对统一走接力那套 sameKey（归一化 + 允许包含），
@@ -227,9 +227,13 @@ export async function pickIdleSong(cfg, { exclude = [] } = {}) {
     return { name: String(it.name), artist: String(it.artist || ''), id: String(it.id || '') };
   };
 
-  /* 0.17.40：来源是「按天气」时，先从天起名单里挑（和接力 pickNext 同一套口径）；
-     名单还没算好就退回听歌历史 —— 不能让安静提议因为天气没算完就哑掉。 */
+  /* 0.17.40：来源是「按天气」时，先挑**下一句会配的那首**（0.1.19 起列表里是"已投过的"，
+     再用它就是又推一遍刚放的那首）。算不出来才退回本轮已投名单，再退回听歌历史 ——
+     不能让安静提议因为天气没算完就哑掉。 */
   if (isWeatherActive(cfg)) {
+    let nx = null;
+    try { nx = await peekNextWx(cfg, { exclude: skip }); } catch { nx = null; }
+    if (nx && nx.name && !isSkip(nx.name)) return { name: nx.name, artist: nx.artist || '', id: nx.id || '' };
     const w = peekWxReco(cfg, { kick: false });
     const wxItems = (w && w.ok && Array.isArray(w.items)) ? w.items.filter((x) => x && x.name) : [];
     const fromWx = take(wxItems);

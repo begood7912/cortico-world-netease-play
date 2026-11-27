@@ -49,7 +49,7 @@ const CLEAR_FAIL_COOLDOWN_MS = 5 * 60 * 1000;
 const PICK_DELAY_MS = 10_000;
 import { cdpAlive, lastAlive, findClientExe } from './client.js';
 import { peekRecommend, generateRecommend } from './recommend.js';
-import { peekWxReco, refreshWxReco, isWxRecoBusy, pickWxSong, dropWxSong } from './wxreco.js';
+import { peekWxReco, nextWxSong, startWxWarmup } from './wxreco.js';
 // 0.17.39：来源开关（设置里那个 2 选 1）现在同时决定接力挑歌、播报话术、以及哪一路允许刷新。
 import { activeSource, isHistoryActive, isWeatherActive } from './source.js';
 // 0.17.36：天气只有一个来源 —— 后台每 qwInterval（15 分钟）查一次并落盘
@@ -325,6 +325,9 @@ export class NeteasePlayWorld {
     // 0.17.36：天气自动查询挂在这里 —— 世界一启动就每 15 分钟查一次并落盘，
     // 面板（模型页那张卡）和卡片5 都只读这一份，谁都不再单独打接口。
     startWeatherAuto(c);
+    // 0.17.76（用户口径）：启动后 4 分钟才预热第一批句子，别和宿主启动抢资源。
+    // 这 4 分钟里面板只显示「还没算好」，想立刻看就点「换一批」。
+    startWxWarmup(c);
     // 启动时后台刷一次歌单缓存，给面板下拉用；客户端没开就算了，不阻塞启动。
     refreshPlaylists(c.cdpPort).catch(() => {});
     // Ollama 模型表同理：configOptions 是同步契约，列表必须先在后台准备好。
@@ -1006,15 +1009,16 @@ export class NeteasePlayWorld {
     // 0.17.39：来源只认 source.js 的翻译，别处不再写 c.chainSource === 'wx'
     const src = activeSource(c) === 'weather' ? 'wx' : 'reco';
     if (src === 'wx') {
+      /* 0.1.19（007，用户口径）：天气这一路是「一句话配一首歌」。
+         这一步就是消耗下一句：取这句 → 算它那首 → 歌和句都从候选里划掉 → 写进列表。
+         100 首的向量在本轮开轮时已经算好，所以这里只剩 20 毫秒左右；
+         句子和歌是同一份（pickNext 返回的 line 就是这首歌配的那句）。 */
+      try {
+        const p = await nextWxSong(c, { exclude });
+        if (p) return p;
+      } catch { /* 下面统一退回推荐 */ }
       let snap = null;
-      try { snap = peekWxReco(c); } catch { snap = null; }
-      const ready = !!(snap && snap.ok && Array.isArray(snap.items) && snap.items.length);
-      if (!ready && !isWxRecoBusy()) {
-        // 10 分钟 TTL 内直接读缓存；过期/没算过就在这一步补算一次（热了 0.5s，冷启动几秒）
-        try { snap = await refreshWxReco(c); } catch { snap = null; }
-      }
-      const p = pickWxSong(c, { exclude, snapshot: snap });
-      if (p) return p;
+      try { snap = peekWxReco(c, { kick: false }); } catch { snap = null; }
       logChainEvent({ ev: 'wx-fallback', why: String((snap && (snap.reason || snap.error)) || 'no-wx-list') });
     }
     const q = await pickIdleSong(c, { exclude });
@@ -1332,10 +1336,8 @@ export class NeteasePlayWorld {
     // 第 146 节：播报 → 投递 → 成功，这个事件到这儿才算完
     logChainEvent({ ev: 'delivered', name: next.name, artist: next.artist || '', count: nextCount });
 
-    // 0.17.39：天气模式放成一首 → 从名单里划掉，下一轮不会又挑到它（不重算，O(30)）。
-    if (isWeatherActive(c)) {
-      try { dropWxSong(next.name); } catch { /* 划不掉只影响下一轮去重 */ }
-    }
+    // 0.1.19（007）：天气模式放成这首，**不在这里划掉** —— 这首在「选它的那一刻」就已经
+    // 从候选里消耗掉了（列表里它是"本轮已投递"）。这里再 drop 等于 10 秒后把已投的记录删掉。
 
     // ⑧ 第 121 节：这一步**删掉**了。
     // 目标歌单已经在 ⑥ 之前定死（`applyPick(c, PANEL_NOW)`），快路径的 del+add、
@@ -1446,9 +1448,12 @@ export class NeteasePlayWorld {
     // 挑歌来源是 reco 的不垫，仍是原来那一句。
     // 0.17.39：再加一道来源校验 —— 开关已经切回历史时，不许再念旧天气那句。
     if (String(next.src || '') === 'wx' && isWeatherActive(c)) {
+      /* 0.1.19（007）：播报垫的是**这首歌配的那句**（一句配一首），next.line 由挑歌时带回；
+         取不到才退回 state.line。 */
+      const own = String(next.line || '').trim();
       let snap = null;
       try { snap = peekWxReco(c, { kick: false }); } catch { snap = null; }
-      const tail = snap && snap.ok ? String(snap.line || snap.weather || '').trim() : '';
+      const tail = own || (snap && snap.ok ? String(snap.line || snap.weather || '').trim() : '');
       if (tail) spoken = `${tail}${/[。！？!?，,]$/.test(tail) ? '' : '。'}${spoken}`;
     }
     // 0.16.89（第 142 节）：这一声有开关（chainSpeak，默认开）。关掉只少一句声音，

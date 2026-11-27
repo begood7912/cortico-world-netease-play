@@ -15,7 +15,7 @@ import { stopSpeaking } from './speak.js';
 import { peekRecommend } from './recommend.js';
 // 0.17.39：来源开关 —— 工具读的、刷的必须是当前生效的那一路
 import { isWeatherActive } from './source.js';
-import { peekWxReco, scheduleWxReco } from './wxreco.js';
+import { peekWxReco, rerollWxPick, peekNextWx } from './wxreco.js';
 // 0.17.43（A8）：用户点歌 = 用户动作，接力静默（chainGate 用同一个判断）
 import { markUserAction } from './userAction.js';
 import { idleSecs } from './listening.js';
@@ -411,13 +411,13 @@ export function makeTools(world) {
           /* 0.17.39：重算的必须是当前来源那一路；另一路已经停刷，不能再把它叫醒。 */
           if (weatherOn) {
             const old = peekWxReco(c, { kick: false });
-            scheduleWxReco(c, { delayMs: 0 });
+            const after = await rerollWxPick(c, {});
             const prev = old && old.ok && Array.isArray(old.items) && old.items.length
-              ? `\n上一批：\n${fmtReco(old.items, 'weather')}`
+              ? `\n这一轮已投：${old.items.map((x) => `《${x.name}》`).join('、')}`
               : '';
-            return '已经按天气开始重算了，大约十几秒。'
-              + '这期间不要去点界面、不要用鼠标操作屏幕，也不要再调这个工具等结果。'
-              + prev;
+            const nx = after && after.ok ? `\n这一轮还剩 ${Math.max(0, Number(after.left) || 0)} 首。` : '';
+            return '已经把这一首换掉了（丢掉这一句和它配的那首，下一句重算一首）。'
+              + nx + prev;
           }
           // 0.0.1.6.31：不再同步等重算（冷态 15 秒，宿主等不住会自己去点界面）。
           // 立刻回一句，算完她报歌名。
@@ -435,8 +435,18 @@ export function makeTools(world) {
           return hint;
         }
         if (weatherOn) {
+          /* 0.1.19（007）：天气这一路是「一句配一首」，列表里是**这一轮已经投出去的**，
+             所以先说下一首（就是下一句算出来的那首），再报这一轮已投了几首。 */
           const w = peekWxReco(c, { kick: false });
-          if (w && w.ok && Array.isArray(w.items) && w.items.length) return fmtReco(w.items, 'weather');
+          let nx = null;
+          try { nx = await peekNextWx(c); } catch { nx = null; }
+          const done = (w && w.ok && Array.isArray(w.items)) ? w.items.filter((x) => x && x.name) : [];
+          const head = nx ? `下一首（按天气）：《${nx.name}》${nx.artist ? ` / ${nx.artist}` : ''}` : '';
+          const tail = done.length
+            ? `这一轮已投 ${done.length} 首：${done.map((x) => `《${x.name}》`).join('、')}`
+            : '';
+          if (head) return tail ? `${head}\n${tail}` : head;
+          if (tail) return tail;
           return `现在还没有按天气算出来的推荐。${w && w.reason ? `（状态：${w.reason}）` : ''}`;
         }
         const rec = peekRecommend(c);

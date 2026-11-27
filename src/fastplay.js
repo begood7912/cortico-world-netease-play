@@ -11,15 +11,13 @@ import { runProc, payloadOf, parseLastJson, logParseFail, nodeExe, PY_DIR, PYTHO
 const RECORD_SCRIPT = join(PY_DIR, 'record_pick.py');
 
 export async function fastPlay({
-  // 0.1.17（B3）：2.5 秒 → 4.5 秒。
-  // 2.5 秒的依据是 0.16.86 那次「页面已经停在目标歌单」的实测（693~2143ms）；
-  // 但 11-25 现场证明冷态（客户端刚启动、页面还在渲染）能到 15 秒，
-  // 2.5 秒会把本来能成的点歌整批杀掉（日志里三条 2500ms 整点 timeout）。
-  // 同时 py/fastplay.js 里加了「先等页面画出标题」，冷态不再一上来就找不到侧栏。
-  cdpPort, title, artist, songId = "", playlist = "", scrollPages = 2, timeoutMs = 4500,
+  // 0.1.21（用户口径「有 id 只走快路径」）：4.5 秒一刀切 → 分段预算之后，
+  // 外层超时放到 6 秒（第一趟），重试趟 3.5 秒（skipHead，页面已经热了）。
+  // 实测正路 1.1~1.5 秒：del 90ms / add 80ms / 等第一行 350~560ms / 点击确认 250~350ms。
+  cdpPort, title, artist, songId = "", playlist = "", scrollPages = 2, timeoutMs = 6000, skipHead = false,
 }) {
   // 参数走 base64：直接传含中文的 JSON 到 spawn 的 argv 会丢字段（实测 playlist 变空）
-  const payload = payloadOf({ title, artist, songId, playlist, scrollPages, cdpPort });
+  const payload = payloadOf({ title, artist, songId, playlist, scrollPages, cdpPort, skipHead });
   // 外壳（4.5 秒 / cwd=py / 摘掉 Electron 变量 / 超时带现场）在 proc.js 的 `netease.fastplay`
   const r = await runProc('fastplay', { payload, cdpPort, timeoutMs });
 

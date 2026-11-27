@@ -67,24 +67,60 @@ export async function playSong(c, a, by = 'user') {
   // 面板下拉存的是歌单 ID，快路径要点侧栏、按名字认，所以先换成名字
   const plRaw = String((c && c.playlist) || '').trim();
   const plName = plRaw ? (nameById(plRaw) || plRaw) : DEFAULT_PLAYLIST;
-  const fast = await fastPlay({
-    cdpPort: c && c.cdpPort, title, artist, songId: id, playlist: plName,
-  });
-  logPlay({
-    title, artist, id, plName, by, fastMs: Date.now() - t0, fast,
-  });
-  if (fast && fast.ok) {
-    if (by === 'user') recordPick({ songId: id, name: title, artist });
-    // 真的放起来了 → 她那句「要我帮你放吗」就算有了着落，确认条收起（0.0.1.6.13）
-    markIdleAnswered();
-    // 0.0.1.6.38：他真在听了，「先安静着」这个临时开关到此为止
-    clearQuiet('played');
-    return { ok: true, message: `正在放：${title}（${Date.now() - t0}ms）`, title, artist, fast: true, ms: Date.now() - t0 };
+  /* 0.1.21（用户口径定稿）：
+     · **有 id 就只走快路径**（id 直加 + 点第一行），失败重试两次、三次都不成就放弃，
+       不再落那条 20 秒的 python 慢路径 —— 慢路径对「有 id」没有任何额外价值，也是按 id 加歌单。
+     · **没 id（AI 报名字点歌）才走慢路径**（搜歌 + 候选打分），打分只在「只有名字」时有用。 */
+  const hasId = /^\d{4,}$/.test(id);
+  let fast = null;
+  if (hasId) {
+    const TRIES = 3;
+    for (let i = 1; i <= TRIES; i += 1) {
+      const tAt = Date.now();
+      fast = await fastPlay({
+        cdpPort: c && c.cdpPort, title, artist, songId: id, playlist: plName,
+        timeoutMs: i === 1 ? 8000 : 5000,   // 0.1.22：别太早放弃（新歌起播实测能到 3 秒以上）
+        skipHead: i > 1,
+      });
+      logPlay({
+        title, artist, id, plName, by, attempt: i, tries: TRIES,
+        fastMs: Date.now() - tAt, fast, stages: (fast && fast.stages) || null,
+      });
+      if (fast && fast.ok) break;
+      if (i < TRIES) await new Promise((r) => setTimeout(r, 250));
+    }
+    if (fast && fast.ok) {
+      if (by === 'user') recordPick({ songId: id, name: title, artist });
+      markIdleAnswered();
+      clearQuiet('played');
+      return {
+        ok: true, message: `正在放：${title}（${Date.now() - t0}ms）`, title, artist, fast: true,
+        ms: Date.now() - t0, attempts: 1,
+      };
+    }
+    // 三次都没放出来 → 直接报失败（不再等 20 秒慢路径）
+    return {
+      ok: false,
+      reason: 'fast-fail',
+      title,
+      artist,
+      message: `点了三次都没放出来（${String((fast && fast.reason) || '原因不明')}）`,
+      attempts: 3,
+      ms: Date.now() - t0,
+    };
   }
 
   const song = { name: title };
   if (artist) song.artist = artist;
   if (id && /^\d+$/.test(id)) song.id = id;   // 有 id 就带着走：脚本按 id 直接用，不搜索、不放错版本
+  /* 0.1.20（用户口径「点的时候经常失败」）：慢路径的最终结果以前**根本没记** ——
+     日志里只有快路径那句 timeout，看起来像「全失败了」，其实多数被慢路径救回来了。
+     这里补一条 play.result，成功/失败/原因都落盘，以后判断「到底放没放成」只看它。 */
+  const logSlow = (okFlag, reason, extra = {}) => logPlay({
+    ev: 'result', title, artist, id, by,
+    ok: !!okFlag, reason: reason || '', fastReason: 'no-id',
+    fastMs: Date.now() - t0, ...extra,
+  });
   const r = await playSongs({
     playlist: (c && c.playlist) || '',
     songs: [song],
@@ -99,11 +135,13 @@ export async function playSong(c, a, by = 'user') {
   const j = r && r.result;
   if (!j) {
     const tail = String((r && r.out) || '').trim().split(/\r?\n/).slice(-3).join(' / ');
+    logSlow(false, 'no-result', { tail });
     return { ok: false, message: `播放脚本没给结果${tail ? `：${tail}` : ''}` };
   }
   if (!j.ok) {
     // 0.17.42：错误可能出在 del / add / play 三段中的任意一段，`error` 已经是人话，
     // `errors` 里带原始 code（排错用）。以前笼统报「没搜到合格的歌」。
+    logSlow(false, 'add-failed', { error: String(j.error || ''), codes: (j.errors || []).map((e) => e && e.code).filter(Boolean) });
     return { ok: false, reason: 'add-failed', message: `没放成：${j.error || '没搜到合格的歌'}` };
   }
 
@@ -112,6 +150,7 @@ export async function playSong(c, a, by = 'user') {
      否则接力会把它当成已经放上，下一轮接着往下接，用户听到的却是上一首。 */
   if (!j.played) {
     const pe = (j.errors || []).find((e) => e && e.stage === 'play');
+    logSlow(false, 'not-playing', { added: added.length, playErr: String((pe && pe.message) || '').slice(0, 120) });
     return {
       ok: false,
       reason: 'not-playing',
@@ -120,6 +159,7 @@ export async function playSong(c, a, by = 'user') {
       message: `加进歌单了，但没放起来${pe && pe.message ? `：${String(pe.message).slice(0, 120)}` : ''}`,
     };
   }
+  logSlow(true, 'slow-ok', { added: added.length });
   const nm = added[0] ? (added[0].title || added[0].name || title) : title;
   const cnt = added[0] && j.ledger ? j.ledger.counts?.[String(added[0].id)] : undefined;
   markIdleAnswered();

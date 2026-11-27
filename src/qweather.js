@@ -39,6 +39,122 @@ export function dirZh(compass) {
   return DIR_ZH[k] || String(compass || '');
 }
 
+/* 0.17.71（用户口径）：天气落盘不再挑字段 —— 接口给什么就存什么。
+   实况 18 项、逐小时 24 段、预报 7 天（含日出日落/月相/白天夜间明细）全部落盘，
+   多出来的体积只有几 KB，换来的好处是以后想用哪个字段都不用再改抓取代码。
+   老字段名一个没动，面板/卡片5/接力挑歌读的还是原来那几个名字。 */
+const numOf = (o) => (o && o.value != null ? o.value : null);
+const pct = (v) => (v == null ? '' : Math.round(Number(v) * 100));
+const raw = (v) => (v == null ? null : v);
+
+function condOf(o) {
+  return { text: (o && o.condition && o.condition.text) || '', code: (o && o.condition && o.condition.code) || '' };
+}
+function windOf(o) {
+  const w = (o && o.wind) || {};
+  return {
+    windDir: w.direction && w.direction.compass,
+    windDirDeg: w.direction && w.direction.degree,
+    windSpeed: numOf(w.speed),
+    windScale: w.scale,
+    windGust: numOf(o && o.windGust),
+  };
+}
+function precipOf(o) {
+  const p = (o && o.precipitation) || {};
+  return {
+    precipAmount: numOf(p.amount),
+    precipIntensity: numOf(p.intensity),
+    precipType: p.type,
+    precipProb: raw(p.probability),
+  };
+}
+
+function nowOf(cur) {
+  const c = condOf(cur);
+  return {
+    temp: numOf(cur.temperature),
+    feelsLike: numOf(cur.feelsLike),
+    text: c.text,
+    code: c.code,
+    humidity: pct(cur.humidity),
+    humidityRaw: raw(cur.humidity),
+    ...windOf(cur),
+    pressure: numOf(cur.pressure),
+    visibility: numOf(cur.visibility),
+    dewPoint: numOf(cur.dewPoint),
+    cloudCover: pct(cur.cloudCover),
+    uvIndex: raw(cur.uvIndex),
+    ...precipOf(cur),
+  };
+}
+
+function hourOf(h) {
+  const c = condOf(h);
+  return {
+    time: h.forecastTime,
+    text: c.text,
+    code: c.code,
+    temp: numOf(h.temperature),
+    feelsLike: numOf(h.feelsLike),
+    humidity: pct(h.humidity),
+    humidityRaw: raw(h.humidity),
+    ...windOf(h),
+    ...precipOf(h),
+    pressure: numOf(h.pressure),
+    visibility: numOf(h.visibility),
+    dewPoint: numOf(h.dewPoint),
+    cloudCover: pct(h.cloudCover),
+    uvIndex: raw(h.uvIndex),
+  };
+}
+
+function partOf(p) {
+  if (!p) return null;
+  const c = condOf(p);
+  return {
+    text: c.text,
+    code: c.code,
+    tempMax: numOf(p.temperatureMax),
+    tempMin: numOf(p.temperatureMin),
+    humidity: pct(p.humidity),
+    humidityRaw: raw(p.humidity),
+    ...windOf(p),
+    windGustMax: numOf(p.windGustMax),
+    ...precipOf(p),
+    cloudCover: pct(p.cloudCover),
+  };
+}
+
+function dayOf(d) {
+  const a = (d && d.astro) || {};
+  const day = partOf(d && d.daytime) || { text: '', code: '' };
+  const night = partOf(d && d.nighttime) || { text: '', code: '' };
+  return {
+    date: String((d && d.forecastStartTime) || '').slice(0, 10),
+    dateEnd: String((d && d.forecastEndTime) || '').slice(0, 10),
+    min: numOf(d && d.temperatureMin),
+    max: numOf(d && d.temperatureMax),
+    avg: numOf(d && d.temperatureAvg),
+    dayText: day.text,
+    nightText: night.text,
+    precip: day.precipProb == null ? null : day.precipProb,
+    uvIndexMax: raw(d && d.uvIndexMax),
+    sunrise: a.sunrise,
+    sunset: a.sunset,
+    civilDawn: a.civilDawn,
+    civilDusk: a.civilDusk,
+    solarNoon: a.solarNoon,
+    solarMidnight: a.solarMidnight,
+    moonPhase: a.moonPhase,
+    moonrise: a.moonrise,
+    moonset: a.moonset,
+    day,
+    night,
+  };
+}
+
+
 function cacheFile() {
   return cachePath('weather-cache.json');
 }
@@ -138,40 +254,22 @@ export async function fetchWeather(cfg) {
     if (String(geo && geo.code) !== '200' || !loc) return { ok: false, error: '地点没查到' };
 
     const pt = `${loc.lat}/${loc.lon}`;
+    // 0.17.71：逐小时/预报都单独兜一层 —— 某一路上游抽风不能把整份天气判死（实况才是必须的）
+    const soft = async (path, fallback) => {
+      try { return await get(path); } catch { return fallback; }
+    };
+    /* 0.17.72（用户口径）：逐小时只要近 4 小时，预报恢复成原来的 2 天。
+       注意：未来小时在实时接口里没有 —— `current` 全是当下，必须单独打 `weather/v1/hourly`。 */
     const cur = await get(`/weather/v1/current/${pt}?lang=zh`);
-    const days = (await get(`/weather/v1/daily/${pt}?days=2&localTime=true&lang=zh`)).days || [];
+    const hour = await soft(`/weather/v1/hourly/${pt}?hours=4&localTime=true&lang=zh`, { hours: [] });
+    const fc = await soft(`/weather/v1/daily/${pt}?days=2&localTime=true&lang=zh`, { days: [] });
     const data = {
       ok: true,
       place: { name: loc.name, adm1: loc.adm1, adm2: loc.adm2, country: loc.country, id: loc.id, lat: loc.lat, lon: loc.lon },
       updateTime: cur.metadata && cur.metadata.validTime ? cur.metadata.validTime : '',
-      now: {
-        temp: cur.temperature && cur.temperature.value,
-        text: cur.condition && cur.condition.text,
-        feelsLike: cur.feelsLike && cur.feelsLike.value,
-        humidity: cur.humidity == null ? '' : Math.round(cur.humidity * 100),
-        code: cur.condition && cur.condition.code,
-        windDir: cur.wind && cur.wind.direction && cur.wind.direction.compass,
-        windDirDeg: cur.wind && cur.wind.direction && cur.wind.direction.degree,
-        windSpeed: cur.wind && cur.wind.speed && cur.wind.speed.value,
-        windScale: cur.wind && cur.wind.scale,
-        windGust: cur.windGust && cur.windGust.value,
-        pressure: cur.pressure && cur.pressure.value,
-        visibility: cur.visibility && cur.visibility.value,
-        dewPoint: cur.dewPoint && cur.dewPoint.value,
-        cloudCover: cur.cloudCover == null ? '' : Math.round(cur.cloudCover * 100),
-        uvIndex: cur.uvIndex,
-        precipAmount: cur.precipitation && cur.precipitation.amount && cur.precipitation.amount.value,
-        precipIntensity: cur.precipitation && cur.precipitation.intensity && cur.precipitation.intensity.value,
-        precipType: cur.precipitation && cur.precipitation.type,
-      },
-      daily: days.map((d) => ({
-        date: String(d.forecastStartTime || '').slice(0, 10),
-        min: d.temperatureMin && d.temperatureMin.value,
-        max: d.temperatureMax && d.temperatureMax.value,
-        dayText: d.daytime && d.daytime.condition && d.daytime.condition.text,
-        nightText: d.nighttime && d.nighttime.condition && d.nighttime.condition.text,
-        precip: d.daytime && d.daytime.precipitation && d.daytime.precipitation.probability,
-      })),
+      now: nowOf(cur),
+      hourly: (hour.hours || []).map(hourOf),
+      daily: (fc.days || []).map(dayOf),
     };
     saveSnap(data);
     return data;
