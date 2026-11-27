@@ -601,8 +601,9 @@ export class NeteasePlayWorld {
   /**
    * 听满一分半，把「别人怎么说 + 她听完怎么想」念出来（卡④）。
    *
-   * 念的样式（用户 0.0.1.6.6 改的口径）：
-   *   有人说：<热评原文>。<她的评价，自己带「我觉得 / 我认为」开头>
+   * 念的样式（0.1.28 用户改的口径）：
+   *   <昵称>说：<热评原文>。<她的评价，自己带「我觉得 / 我认为」开头>
+   * 昵称拿不到（评论没带用户名）才退回「有人说：」。
    * 开头不再点歌名；评价那句不挂「她听完说」的引子，直接接在原文后面，
    * 读起来就是「有人这么说，我觉得……」一整段。
    *
@@ -619,7 +620,7 @@ export class NeteasePlayWorld {
     if (!cm || !cm.text) {
       const r = await generateComment({ title, artist, gen });
       if (!r.ok) return r;
-      cm = { text: r.text };
+      cm = { text: r.text, nick: r.nick };
     }
     const text = String(cm.text || '').trim();
     if (!text) return { ok: false, reason: 'empty' };
@@ -639,8 +640,10 @@ export class NeteasePlayWorld {
     const mine = String(rp.text || '').trim();
     if (!mine) return { ok: false, reason: 'empty' };
 
+    const nick = String((cm && cm.nick) || '').replace(/\s+/g, ' ').trim();
+    const who = nick ? `${nick}说：` : '有人说：';
     const full = speechClean(text);
-    const spoken = `有人说：${full}${mine}`;
+    const spoken = `${who}${full}${mine}`;
     const r = await speak({ text: spoken, url: c.ttsUrl, engine: c.ttsEngine, voice: c.ttsVoice });
     return { ...r, comment: text, reply: mine, spoken };
   }
