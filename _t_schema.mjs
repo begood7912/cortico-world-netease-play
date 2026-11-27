@@ -16,7 +16,7 @@ const EXPECT = {
   quietStart: '23:00', quietEnd: '07:00', quietOn: false,
   chainPick: true, chainSpeak: true, chainSource: 'reco', chainPlaylist: false, chainClearDaily: true,
   chainClearHour: 6, chainCharts: '3778678,19723756',
-  playlist: '', autoFav: true, favThreshold: 2, allowRestart: false, cdpPort: 9229, clientExe: '',
+  playlist: '', autoFav: true, favThreshold: 2, allowRestart: true, clientExe: '',
   modelSource: 'local', ollamaUrl: 'http://127.0.0.1:11434', embedModel: '', vramMode: 'eco',
   chatModel: '', ttsUrl: 'http://127.0.0.1:9880', ttsEngine: 'gpt', ttsVoice: '',
   qwApiHost: '', qwApiKey: '', qwInterval: 15, qwAlign: false,
@@ -24,10 +24,10 @@ const EXPECT = {
   promptHearHead: '', promptHearTail: '', promptFeelHead: '', promptFeelTail: '', promptCommentHead: '', promptCommentTail: '',
 };
 check('默认值与旧表逐项一致', eq(DEFAULTS, EXPECT), JSON.stringify(Object.keys(EXPECT).filter((k) => DEFAULTS[k] !== EXPECT[k])));
-check('键数 54', Object.keys(SETTING_SCHEMA).length === 54, String(Object.keys(SETTING_SCHEMA).length));
-check('白名单 21 布尔 + 7 数字 + 26 文本', BOOL_KEYS.length === 21 && INT_KEYS.length === 7 && STR_KEYS.length === 26, `${BOOL_KEYS.length}/${INT_KEYS.length}/${STR_KEYS.length}`);
+check('键数 53（0.1.30 去掉 cdpPort）', Object.keys(SETTING_SCHEMA).length === 53, String(Object.keys(SETTING_SCHEMA).length));
+check('白名单 21 布尔 + 6 数字 + 26 文本', BOOL_KEYS.length === 21 && INT_KEYS.length === 6 && STR_KEYS.length === 26, `${BOOL_KEYS.length}/${INT_KEYS.length}/${STR_KEYS.length}`);
 check('六段提示词齐全', PROMPT_KEYS.length === 6);
-check('范围表 7 项', Object.keys(RANGES).length === 7, String(Object.keys(RANGES).join(',')));
+check('范围表 6 项', Object.keys(RANGES).length === 6, String(Object.keys(RANGES).join(',')));
 check('schema 自检通过', lintSchema(AFFECTS).length === 0, lintSchema(AFFECTS).join('; '));
 check('反查：改 cards 面涉及 6 个键', keysAffecting('cards').length > 0, String(keysAffecting('cards').length));
 

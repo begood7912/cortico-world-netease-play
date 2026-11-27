@@ -74,9 +74,13 @@ const artistBits = wantArtist
 // 白落 5~10 秒的慢路径。提到所有使用点之前，两个分支共用。
 const rowMatches = (txt) => {
   const t = norm(txt);
+  // 0.1.31：歌手名常被客户端塞进括号里（「起风了（原曲…）冯沁苑(买辣椒也用券)」），
+  // 而 norm() 为了去掉 (Live)/[SQ] 这类标记会把整段括号删掉 —— 歌手就跟着括号一起没了。
+  // 所以歌手这一关再补一个「原文本」比对：只去空格和分隔符，不动括号。
+  const loose = String(txt || "").toLowerCase().replace(/[\s\-_·,'"’“”]/g, "");
   if (!t.includes(normW(wantName))) return false;
   if (!artistBits.length) return true;
-  return artistBits.some((p) => t.includes(p));
+  return artistBits.some((p) => t.includes(p) || loose.includes(p));
 };
 
 let page;
@@ -133,7 +137,7 @@ async function click(x, y, count) {
 }
 
 const bar = () => ev(`(()=>{
-  let t='', cid='', n=0;
+  let t='', cid='', n=0, playing=false;
   // 第 115 节：新版界面上 DefaultBarWrapper 这个 class 已经没了（实测 b=null）。
   // 0.16.86（第 132 节 A9）：连带把依赖它的 on（暂停图标判断）一起删掉 ——
   // 它恒为 false，日志里 startedOn 永远是 false，只会误导排查。现在只读两样：
@@ -165,9 +169,114 @@ const bar = () => ev(`(()=>{
     }
   }
   if (!cid) return '';
-  return JSON.stringify({t:t,cid:cid,n:n});
+  /* 0.1.31：顺手读「到底在不在播」——
+     3.1.10 实测：暂停时播放键的图标是 cmd-icon-play，播放时同一处是 cmd-icon-pause。
+     以前这里只读 id 和文本，所以「双击把正在播的那首切成了暂停」这种失败看不见
+     （id 对得上 → 判定成功 → 播报说播了，其实静音）。 */
+  const host=hits.length ? hits[0].e : null;
+  if (host) playing=!!host.querySelector('[class*="cmd-icon-pause"]');
+  return JSON.stringify({t:t,cid:cid,n:n,playing:playing});
 })()`);
 const pageHead = () => ev(`(()=>{const h=document.querySelector('h1,h2');return h?(h.textContent||'').trim():''})()`);
+
+/* 0.1.30（黑胶播放页，2026-11-28 实测）：
+   用户在客户端里停「播放页·黑胶」时，body 上挂 `vinyl-mode`，整块主界面被 `VinylPageContainer` 盖住。
+   这时侧栏和列表**都还在 DOM 里**、坐标也读得到，但 `elementFromPoint(第一行中心)` 命中的是
+   `cover-area`（唱片封面）—— 双击等于点封面，歌不响；而 `h1` 仍是被盖住的那个歌单名，
+   于是 ②「不在目标歌单页才切」也被骗过去，直接落到 ④ 双击空气，报 clicked-not-playing。
+
+   解法（探针实测）：**不点坐标，直接对侧栏歌单项派发 click 事件**。
+   实测派发后 1 秒内 body 的 vinyl-mode 就掉了、h1 变成目标歌单、第一行的 elementFromPoint
+   变回 `td-title`，之后双击就能正常起播。全程不抢窗口、不动播放。 */
+const onVinyl = async () => {
+  const r = await ev(`(()=>{
+    if(((document.body.className||'')+'').includes('vinyl-mode')) return 'class';
+    const v=document.querySelector('[class*=VinylPageContainer]');
+    if(!v) return '';
+    const g=v.getBoundingClientRect();
+    return (g.width>10 && getComputedStyle(v).display!=='none') ? 'visible' : '';
+  })()`);
+  return !!r;
+};
+
+// 侧栏歌单项：DOM 派发点击（不经坐标，被页面盖住时也照样能切路由）
+const sidebarClick = async (name) => ev(`(()=>{
+  const items=[...document.querySelectorAll('[class*=PlayListItemContent]')];
+  const t=items.find(e=>(e.textContent||'').trim()===${JSON.stringify(name)});
+  if(!t) return '';
+  const g=t.getBoundingClientRect();
+  const o={bubbles:true,cancelable:true,view:window,button:0};
+  t.dispatchEvent(new PointerEvent('pointerdown',o));
+  t.dispatchEvent(new MouseEvent('mousedown',o));
+  t.dispatchEvent(new MouseEvent('mouseup',o));
+  t.dispatchEvent(new MouseEvent('click',o));
+  return JSON.stringify({w:Math.round(g.width)});
+})()`);
+
+// 侧栏收起来了就先点展开图标
+const ensureSidebar = async () => ev(`(()=>{
+  const e=document.querySelector('[class*=cmd-icon-sidebar_unfold]');
+  if(!e) return '';
+  const o={bubbles:true,cancelable:true,view:window,button:0};
+  e.dispatchEvent(new MouseEvent('click',o));
+  return 'unfold';
+})()`);
+
+// 侧栏任意一项：优先「当前选中」的，其次第一个 —— 只为先把播放页关掉
+const sidebarClickAny = async () => ev(`(()=>{
+  const items=[...document.querySelectorAll('[class*=PlayListItemContent]')];
+  const t=items.find(e=>(e.className||'').toString().includes('selected'))
+    || items.find(e=>{const g=e.getBoundingClientRect();return g.width>8;});
+  if(!t) return '';
+  const o={bubbles:true,cancelable:true,view:window,button:0};
+  t.dispatchEvent(new PointerEvent('pointerdown',o));
+  t.dispatchEvent(new MouseEvent('mousedown',o));
+  t.dispatchEvent(new MouseEvent('mouseup',o));
+  t.dispatchEvent(new MouseEvent('click',o));
+  return JSON.stringify({name:(t.textContent||'').trim()});
+})()`);
+
+async function waitOffVinyl(max = 14) {
+  for (let i = 0; i < max; i += 1) {
+    await sleep(80);
+    if (!(await onVinyl())) return true;
+  }
+  return false;
+}
+
+// 退出黑胶播放页：切到指定歌单，等 body 掉 vinyl-mode
+async function leaveVinyl(name) {
+  let ok = await sidebarClick(name);
+  if (!ok) {
+    await ensureSidebar();
+    await sleep(200);
+    ok = await sidebarClick(name);
+  }
+  if (!ok) return false;
+  return waitOffVinyl();
+}
+
+// 目标歌单不在侧栏时：点当前选中/第一项，先离开播放页（切歌单交给后面 ②）
+async function leaveVinylAny() {
+  let ok = await sidebarClickAny();
+  if (!ok) {
+    await ensureSidebar();
+    await sleep(200);
+    ok = await sidebarClickAny();
+  }
+  if (!ok) return false;
+  return waitOffVinyl();
+}
+
+// 点之前先确认这个坐标真的落在「列表行」上（黑胶页里会落到 cover-area 上）
+const pointOnRow = async (x, y) => {
+  const r = await ev(`(()=>{
+    const el=document.elementFromPoint(${Math.round(x)},${Math.round(y)});
+    if(!el) return false;
+    return !!el.closest('[class*=td-title]');
+  })()`);
+  return !!r;
+};
 
 // 列表第一行：歌名文本 + 可点坐标（y 落在视口内才算可点）+ **这一行的歌曲 id**
 // 第 116 节：行 DOM 的 data-log 里带 params.s_cid（第 106 节实测），顺手读出来 —— 
@@ -240,6 +349,49 @@ async function dblRow(row) {
   await click(row.x, row.y, 1);
   await sleep(70);
   await click(row.x, row.y, 2);
+}
+
+/* ---------- 0.1.31：这一行「是不是这首歌」的判定，以及「点完真的在响吗」的补救 ---------- */
+
+/** 第一行算不算目标：有 id 就只认 id（3.1.10/3.1.44 两版实测，行自身 data-log 的 s_cid 都是歌 id），
+    没有 id 才退回文本（原来那套，歌手现在会连括号原文一起看）。 */
+const isTargetRow = (r) => {
+  if (!r) return false;
+  if (wantId && r.cid && String(r.cid) === String(wantId)) return true;
+  return rowMatches(r.txt);
+};
+
+const asObj = (raw) => {
+  try { return raw ? JSON.parse(raw) : null; } catch { return null; }
+};
+const barNow = async () => asObj(await bar());
+
+/** 按一下播放条上的播放/暂停键（只在「确认暂停」时用，不会把正在播的弄停）。 */
+const playPause = () => ev(`(()=>{
+  const b=document.querySelector('[data-log*="btn_pc_minibar_play"]');
+  if(!b) return false;
+  const g=b.getBoundingClientRect();
+  const o={bubbles:true,cancelable:true,view:window,button:0,
+    clientX:Math.round(g.left+g.width/2),clientY:Math.round(g.top+g.height/2),pointerType:'mouse'};
+  b.dispatchEvent(new PointerEvent('pointerdown',o));
+  b.dispatchEvent(new MouseEvent('mousedown',o));
+  b.dispatchEvent(new PointerEvent('pointerup',o));
+  b.dispatchEvent(new MouseEvent('mouseup',o));
+  b.dispatchEvent(new MouseEvent('click',o));
+  return true;
+})()`);
+
+/** 播放条已经是这首歌、但停在暂停 → 补按播放，最多三次。
+    3.1.10 实测：双击「正在播放的那一行」等于播放/暂停切换，会把歌按停（进度停在整分整秒不动）。 */
+async function ensureRunning(cid) {
+  let p = await barNow();
+  for (let i = 0; i < 3; i += 1) {
+    if (!p || !cid || String(p.cid) !== String(cid) || p.playing) return p;
+    await playPause();
+    await sleep(260);
+    p = await barNow();
+  }
+  return p;
 }
 
 // 最多等 0.4 秒：常听的歌播放条 0.3~0.5 秒就更新了，
@@ -316,6 +468,16 @@ async function searchId(cookie, name, artist) {
 // 歌单 id 会一直不变，缓存到本地文件，省掉每次那一次网络往返（约 200ms）
 const PID_CACHE = join(dirname(fileURLToPath(import.meta.url)), ".pidcache.json");
 
+/** 删掉某个名字的缓存（歌单被删 / 改名 / 接口回 404 时用）。写不了也不影响本次。 */
+function forgetPid(name) {
+  try {
+    const cache = JSON.parse(readFileSync(PID_CACHE, "utf8"));
+    if (!(name in cache)) return;
+    delete cache[name];
+    writeFileSync(PID_CACHE, JSON.stringify(cache));
+  } catch { /* 没缓存 / 文件坏了都无所谓，下次重新查 */ }
+}
+
 async function playlistId(cookie, name) {
   let cache = {};
   try { cache = JSON.parse(readFileSync(PID_CACHE, "utf8")); } catch { /* 没有就算了 */ }
@@ -351,17 +513,57 @@ try {
   }
   mark("head");
 
+  // 0.1.30：先确认自己不在「播放页·黑胶」里。在的话先把路由切回目标歌单（或当前选中的歌单），
+  // 否则后面取到的第一行坐标会落在唱片封面上，点了不响。
+  let leftVinyl = "";
+  if (await onVinyl()) {
+    const target = wantPlaylist
+      || (await ev(`(()=>{const i=document.querySelector('[class*=PlayListItemContent].selected');return i?(i.textContent||'').trim():''})()`))
+      || "";
+    if (!target || !(await leaveVinyl(target))) {
+      // 目标歌单一时不在侧栏（比如收在「收藏的歌单」里没展开）时，退一步：
+      // 点当前选中/第一项先把播放页关掉，② 再负责切到目标歌单。
+      if (!(await leaveVinylAny())) done({ ok: false, reason: "vinyl-stuck", playlist: target || "" });
+    }
+    leftVinyl = "left";
+    head0 = await pageHead();
+    // 路由刚切完，列表可能还在画：等第一行冒出来，最多 1.1 秒
+    for (let i = 0; i < 12; i += 1) {
+      if (await firstRow()) break;
+      await sleep(90);
+    }
+  }
+  mark("vinyl");
+
   // ① 当前列表第一行就是这首歌 → 直接双击
   const r0 = await firstRowUsable();
-  if (r0 && (r0.txt || "").includes(wantName) && (!wantPlaylist || head0 === wantPlaylist)) {
+  if (isTargetRow(r0) && (!wantPlaylist || head0 === wantPlaylist)) {
     mark("already-check");
+    /* 0.1.31：目标就是这一行、而且**已经在这首上放着** → 一个指头都别动。
+       3.1.10 实测：对「正在播放的那一行」双击等于播放/暂停切换，会把正放的歌按停，
+       而播放条 id 又对得上，所以以前会误报成功（播报说播了，其实静音）。
+       这里拿「第一行的 id」和「播放条的 id」自己比，所以只报了歌名的场景也管用。 */
+    const cur0 = await barNow();
+    if (cur0 && r0.cid && String(cur0.cid) === String(r0.cid) && cur0.playing) {
+      done({
+        ok: true, clicked: false, confirmed: true, how: "already-playing", leftVinyl,
+        played: r0.txt, playedId: r0.cid || "", bar: cur0.t || "", cid: cur0.cid || "", id: wantId,
+      });
+    }
+    // 0.1.30：这一行必须真的是可点的（没被播放页/其它浮层盖住），否则先别点
+    if (!(await pointOnRow(r0.x, r0.y))) {
+      done({ ok: false, reason: "row-covered", how: "already-first", played: r0.txt });
+    }
     await dblRow(r0);
-    const p = await waitPlaying(16);
+    let p = await waitPlaying(16);
+    // 0.1.31：点完 id 对、可是停着 → 补按一次播放（只报了歌名的场景就用第一行的 id 确认）
+    const expect0 = wantId || (r0 && r0.cid) || "";
+    if (p && expect0 && p.cid && String(p.cid) === String(expect0) && !p.playing) p = await ensureRunning(expect0);
     mark("click");
     // 第 116 节：和主路径同一个坑 —— 点了不等于响了。
     // 而且**有 id 就只认 id**（用户 108.2 口径：id 在这边全局唯一，不可能指错歌），
     // 文本比对只留给「本来就没有 id」的旧链路。
-    const confirmed0 = !!(p && ((wantId && p.cid && String(p.cid) === String(wantId))
+    const confirmed0 = !!(p && p.playing && ((wantId && p.cid && String(p.cid) === String(wantId))
       || (!wantId && p.t && rowMatches(p.t))));
     done({
       ok: confirmed0,
@@ -369,6 +571,7 @@ try {
       confirmed: confirmed0,
       reason: confirmed0 ? undefined : "clicked-not-playing",
       how: "already-first",
+      leftVinyl,
       played: r0.txt,
       playedId: r0.cid || "",
       bar: (p && p.t) || "",
@@ -383,20 +586,15 @@ try {
   if (wantPlaylist && head0 !== wantPlaylist) {
     // 0.1.17（B3）：侧栏是懒渲染的 —— 刚切入/刚启动时这一项可能还没画出来，
     // 老逻辑一取不到就报 no-playlist-in-sidebar。改成最多重试 8 次（约 1.6 秒）。
-    let item = "";
+    // 0.1.30：改成 DOM 派发点击 —— 黑胶播放页里侧栏被盖住，坐标点不到（原来那招会静默失败）。
+    let hit = "";
     for (let i = 0; i < (SKIP_HEAD ? 3 : 6); i += 1) {
-      item = await ev(`(()=>{
-      const all=[...document.querySelectorAll('[class*=PlayListItemContent]')];
-      for(const e of all){ if((e.textContent||'').trim()!==${JSON.stringify(wantPlaylist)}) continue;
-        const r=e.getBoundingClientRect(); if(r.width<8) continue;
-        return JSON.stringify({x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}); }
-      return ''})()`);
-      if (item) break;
+      hit = await sidebarClick(wantPlaylist);
+      if (hit) break;
+      await ensureSidebar();
       await sleep(150);
     }
-    if (!item) done({ ok: false, reason: "no-playlist-in-sidebar", head: head0 });
-    const p = JSON.parse(item);
-    await click(p.x, p.y, 1);
+    if (!hit) done({ ok: false, reason: "no-playlist-in-sidebar", head: head0 });
     // 0.1.21：12×110（1.3 秒）→ 10×90（0.9 秒），实测切完 350~400ms 列表就出来了
     for (let i = 0; i < 10; i += 1) {
       await sleep(90);
@@ -428,16 +626,39 @@ try {
     searched = true;
   }
 
-  const pid = await playlistId(cookie, wantPlaylist);
+  let pid = await playlistId(cookie, wantPlaylist);
   if (!pid) done({ ok: false, reason: "no-playlist", playlist: wantPlaylist });
 
-  // 删了再加：接口对不在歌单里的 id 也返回 200，所以不用先查在不在
-  await apiPost("/api/playlist/manipulate/tracks", {
-    op: "del", pid, trackIds: JSON.stringify([Number(wantId)]), csrf_token: csrf,
-  }, cookie);
-  const added = await apiPost("/api/playlist/manipulate/tracks", {
-    op: "add", pid, trackIds: JSON.stringify([Number(wantId)]), imme: "true", csrf_token: csrf,
-  }, cookie);
+  /* 0.1.31：歌单 id 是缓存在 py/.pidcache.json 里的，但「删掉歌单」或「改名」之后缓存不会失效 ——
+     下次同名重建，就会拿着已经不存在的旧 id 去 add，接口回 404「歌单不存在」。
+     （2026-11-28 实测踩到：建了个同名测试歌单，直接 404。）
+     所以 404 时把这条缓存清掉、重查一次；还是拿不到才算真没这个歌单。 */
+  const addTo = async () => {
+    // 删了再加：接口对不在歌单里的 id 也返回 200，所以不用先查在不在
+    await apiPost("/api/playlist/manipulate/tracks", {
+      op: "del", pid, trackIds: JSON.stringify([Number(wantId)]), csrf_token: csrf,
+    }, cookie);
+    return apiPost("/api/playlist/manipulate/tracks", {
+      op: "add", pid, trackIds: JSON.stringify([Number(wantId)]), imme: "true", csrf_token: csrf,
+    }, cookie);
+  };
+  let added = await addTo();
+  if (added && added.code === 404) {
+    forgetPid(wantPlaylist);
+    const pid2 = await playlistId(cookie, wantPlaylist);
+    if (pid2 && String(pid2) !== String(pid)) {
+      pid = pid2;
+      /* 光换 id 还不够：页面这会儿挂的是「已经不存在的那个歌单」的旧内容
+         （实测：head 对得上，列表里却是旧歌单那几行）—— 得重新点一次同名侧栏项，
+         逼它按新 id 再拉一遍，否则后面「等第一行」永远等不到目标。 */
+      await sidebarClick(wantPlaylist);
+      for (let i = 0; i < 8; i += 1) {
+        await sleep(120);
+        if ((await pageHead()) === wantPlaylist) break;
+      }
+      added = await addTo();
+    }
+  }
   if (added.code && ![200, 201, 502].includes(added.code)) {
     done({ ok: false, reason: "add-failed", api: added });
   }
@@ -453,10 +674,14 @@ try {
   for (let i = 0; i < 26; i += 1) {
     await sleep(90);
     const r = await firstRowUsable();
-    if (r && rowMatches(r.txt)) { row = r; break; }
+    if (isTargetRow(r)) { row = r; break; }
   }
   mark("row");
   if (!row) done({ ok: false, reason: "first-row-not-target", how, id: wantId, searched, wantName, wantArtist });
+  // 0.1.30：坐标必须真的落在这一行上，否则点了也只会点到别的东西（黑胶页/浮层）
+  if (!(await pointOnRow(row.x, row.y))) {
+    done({ ok: false, reason: "row-covered", how, id: wantId, played: row.txt, searched, wantName, wantArtist });
+  }
 
   await dblRow(row);
   /* 0.1.22（用户实测「每一个都要点两次才能成功」）：根子在「刚加进歌单的新歌」——
@@ -470,13 +695,17 @@ try {
     clicks = 2;
     playing = await waitPlaying(40);
   }
+  // 0.1.31：点了、id 也对，但它是停着的（双击落在「正在播的那行」= 切换暂停）→ 补按播放再确认
+  if (playing && wantId && String(playing.cid) === String(wantId) && !playing.playing) {
+    playing = await ensureRunning(wantId);
+  }
   mark("click");
   // 第 115 节：**必须确认它真响起来了**才算成功。
   // 原来这里写的是 `ok: true`（注释「点了就算成功」），实测代价很大：
   // 列表第一行换成了目标、播放条却一声没响，照样回报 ok →
   // 上层把 base 记成这首新歌 → 3 秒后采样发现播放条还是旧歌 → 判成「切歌」→ 整轮收场。
   // 用户看到的就是：播报是对的，歌没放，接力断了。
-  const confirmed = !!(playing
+  const confirmed = !!(playing && playing.playing
     && ((wantId && playing.cid && String(playing.cid) === String(wantId))
       || (!wantId && playing.t && rowMatches(playing.t))));
   done({
@@ -487,6 +716,7 @@ try {
     // 点了、但播放条没证明它响了 → 失败，交给上层按第 93 节重试（20 秒一次、最多 3 次）
     reason: confirmed ? undefined : "clicked-not-playing",
     how,
+    leftVinyl,
     // 第 116 节：`played` 是**列表第一行**的文本（我们点的那个），不是播放条的反馈，
     // 光看它容易误判成「放对了」。所以再记一个 `playedId`（同一行的 s_cid），
     // 排查时直接看 `id` / `playedId` / `cid` 三个 id 对不对得上，别再靠歌名。

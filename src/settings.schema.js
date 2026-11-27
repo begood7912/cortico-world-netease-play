@@ -70,8 +70,13 @@ export const SETTING_SCHEMA = Object.fromEntries([
   def('playlist', 'str', '', { group: 'music', affects: ['account', 'chain'] }),
   def('autoFav', 'bool', true, { group: 'music', affects: ['account'] }),
   def('favThreshold', 'int', 2, { group: 'music', range: [2, 20], affects: ['account'] }),
-  def('allowRestart', 'bool', false, { group: 'music', affects: ['account'] }),
-  def('cdpPort', 'int', 9229, { group: 'music', range: [1, 65535], affects: ['account', 'chain'] }),
+  /* 0.1.30（用户口径）：默认打勾 —— 没端口时自己退掉客户端再带端口重开。
+     只有用户明确取消勾选才当「不许杀客户端」；存量里存着 false 的一律尊重（那是他自己关的）。 */
+  def('allowRestart', 'bool', true, { group: 'music', affects: ['account'] }),
+  /* 0.1.30（用户口径）：只把「网易云调试端口（CDP）」从设置项里拿掉了 —— 端口固定 9229，不再让人填。
+     「允许脚本重启网易云」那个开关保留，行为不变（关着就不杀客户端）。
+     代码里会在运行期把 cdpPort 补回内存（world.js），所以老配置里留下的端口值不会生效。
+     想恢复成可填，把 webui/panel.js 里那行 cdpPort 加回来即可。 */
   def('clientExe', 'str', '', { group: 'music', affects: ['account'] }),
 
   // 模型与语音（store）

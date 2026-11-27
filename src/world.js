@@ -320,6 +320,14 @@ export class NeteasePlayWorld {
     sweepOld();
     // 布尔开关的显式初值（没设置时设置页会画成「关」，见 BOOL_DEFAULTS 注释）。
     ensureBoolDefaults(this.ctx);
+    /* 0.1.30（用户口径）：调试端口不再是设置项 —— 一律固定 9229。
+       老配置里可能还留着 cdpPort（比如填过别的值），这里在内存里改成 9229，
+       所有下游（CDP 探测、子脚本环境变量、面板文案）读到的就是同一个值，不用挨个改。
+       不写盘：万一下次要恢复成可填，配置里那份原值还在。 */
+    const cs = (this.ctx && this.ctx.cfg) || {};
+    try {
+      if (Number(cs.cdpPort) !== 9229) cs.cdpPort = 9229;
+    } catch { /* cfg 被冻结就算了：下游每个读取点都有 `|| 9229` 兜底 */ }
     // 启动时后台刷一次歌单缓存，给面板下拉用；客户端没开就算了，不阻塞启动。
     const c = (this.ctx && this.ctx.cfg) || {};
     // 0.17.36：天气自动查询挂在这里 —— 世界一启动就每 15 分钟查一次并落盘，

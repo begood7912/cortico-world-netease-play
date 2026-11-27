@@ -1866,7 +1866,8 @@ export default {
               { key: 'autoFav', kind: 'bool' },
               { key: 'favThreshold', kind: 'int' },
               { key: 'allowRestart', kind: 'bool' },
-              { key: 'cdpPort', kind: 'int' },
+              /* 0.1.30（用户口径）：只去掉「网易云调试端口（CDP）」这一项 —— 端口固定 9229，不再让人填。
+                 「允许脚本重启网易云」那个开关保留，行为不变。 */
               { key: 'clientExe', kind: 'line' },
             ],
           },

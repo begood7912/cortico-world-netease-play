@@ -85,6 +85,26 @@ let lastLaunchAt = 0;
 let launching = null;
 
 /**
+ * 退掉正在跑的客户端，等它真的没了（0.1.30）。
+ *
+ * 用途：客户端开着、但没带 9229 —— 这时「只等 CDP」是等不出来的（等 40 秒照样失败），
+ * 只能退掉再带端口重开。什么时候允许杀，由设置里的 allowRestart 决定（默认 true）。
+ */
+async function killClient() {
+  try {
+    await execFileP('taskkill', ['/F', '/IM', 'cloudmusic.exe'], {
+      timeout: 5000,
+      windowsHide: true,
+    });
+  } catch { /* 进程不在时 taskkill 返回非零，属正常，不算失败 */ }
+  for (let i = 0; i < 24; i += 1) {
+    await new Promise((r) => setTimeout(r, 250));
+    if (!(await clientProcessRunning({ force: true }))) return true;
+  }
+  return false;
+}
+
+/**
  * 进程在不在（不看 CDP）。
  *
  * 为什么要多这一道：`/json` 偶尔会漏一拍 —— 实测遇到过「两次探测都失败但其实客户端开得好好的」，
@@ -138,9 +158,26 @@ export async function ensureClient(cfg, { timeoutMs = 40000 } = {}) {
 
   const t0 = Date.now();
   let launched = false;
-  // 进程已经在跑（只是 CDP 这一拍没响应）→ 不启动，只等它
+  let restarted = false;
+  // 进程已经在跑（只是 CDP 这一拍没响应）→ 一般只等它。
+  /* 0.1.30（用户口径）：但如果它根本没带调试端口，「等」是没有尽头的 ——
+     设置里「允许脚本重启网易云」默认打勾，这时直接退掉再带端口拉起（会打断当前播放，
+     用户明确要这个行为；他取消勾选才当「绝不杀客户端」）。 */
   const alreadyRunning = await clientProcessRunning({ force: true });
-  if (!alreadyRunning && Date.now() - lastLaunchAt > 60000) {
+  if (alreadyRunning && !(cfg && cfg.allowRestart === false)) {
+    /* 先宽限 2 秒：客户端刚被拉起来时，端口会晚一拍才通 —— 这段时间里杀了它反而更糟。
+       4 × 500ms 还不通，才认定「它根本没带调试端口」。 */
+    let up = false;
+    for (let i = 0; i < 4 && !up; i += 1) {
+      await new Promise((r) => setTimeout(r, 500));
+      up = await cdpAlive(port, { force: true });
+    }
+    if (!up) {
+      restarted = await killClient();
+      if (!restarted) return { ok: false, reason: 'kill-fail', exe };
+    }
+  }
+  if ((restarted || !alreadyRunning) && (restarted || Date.now() - lastLaunchAt > 60000)) {
     lastLaunchAt = Date.now();
     try {
       const child = spawn(exe, [
@@ -159,7 +196,7 @@ export async function ensureClient(cfg, { timeoutMs = 40000 } = {}) {
       // 0.0.1.6.40：客户端被拉起来了 → 「先安静着」这个临时开关当场放开。
       // 用户口径：「客户端拉起以后就自动放开，这个简单一点，因为点歌的时候也会把客户端自动拉起。」
       if (r.ok) clearQuiet('client-up');
-      return { ...r, launched, exe, ms: Date.now() - t0 };
+      return { ...r, launched, restarted, exe, ms: Date.now() - t0 };
     })
     .finally(() => { launching = null; });
   return launching;
